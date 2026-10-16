@@ -168,6 +168,13 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 14:29: NEW entry 162 (relayed) -- the "invalid name length"
+warnings at a GUI open of scanner.FCStd, cause found by the build
+session, fix building r83; 158 measured on the real screen (the page adds
+about 2 s when opened before the progressive load ends, the rest is the
+load); 152 done `0a899727e2`, 160's missing face done `c33e177bcf` -- LOCAL,
+not pushed, not staged.** Under the entries.
+
 **2026-10-16 13:28: entry 158 -- the reporter's words for the real-screen run
 relayed; NEW entry 161 (relayed) -- Apex flagged FreeCAD.exe as
 unauthorized file encryption.** Under the entries.
@@ -3236,16 +3243,17 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): a part view and a projection group picked by a 2 mm band along the frame (shown or not), label and caption, lines and faces; the empty inside lets the click through; other view kinds unchanged. DONE 21:26 (build session): `7c6d93ba5f`, LOCAL, not pushed, not staged |
 | 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet. FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58), as described at 16:57. DONE 21:26 (build session): `c9417fada7`, LOCAL, not pushed, not staged |
 | 151 | 2026-10-16 | a defect: opening `scanner.FCStd` NOW, NONE of the TechDraw EDGES or FACES can be selected; DIMENSIONS can (by line or label); rendered under QT, NONE of the faces or edges are even DRAWN | OPEN; by the note-taker's reading on the copy staged 09:01 (`78fdeb4689`), a regression of the TechDraw picking work (entries 148, 149). ANSWERED 09:44: only on FIRST LOADING the document -- after switching to another page it works, and Page009 works too after switching back. 11:02 CAUSE FOUND, FIX verified on build r76, NOT committed, not pushed, not staged: the document is still restoring after the open returns, a page shown then skips its part views' draws and nothing asks again; a skipped draw now asks once the restore is over. 13:26 FIXED `b6e4813887` LOCAL, not pushed, not staged: a page opened while the document still restores draws once the restore ends; the Qt "nothing drawn" is the SAME skipped draw (build session) |
-| 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN. 13:26 CODED by the build session (PD watchers hidden while the active view is not a 3D view), building r81; NOT committed |
+| 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN. 13:26 CODED by the build session (PD watchers hidden while the active view is not a 3D view), building r81; NOT committed. 14:29 DONE `0a899727e2` LOCAL, not pushed, not staged (test 6/6 on r82) |
 | 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix. ANSWERED 09:57: 300 ms; ONLY the DEFAULT changes; the timer RESTARTS on each turn as now (current logic kept). 11:02 DONE in the source, r76, NOT committed, not pushed, not staged: default 300 ms, restart logic kept. 13:26 DONE `0d6816c312` LOCAL, not pushed, not staged: default 300 ms; the reporter's user.cfg stores 1000, so the new default shows only after that key is reset |
 | 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN. ANSWERED 09:50: the LATEST STAGED copy (`78fdeb4689`); a view IN A PROJECTION GROUP; before -- not sure. 11:02 CAUSE FOUND (OLD code): a projection group never reports its moves (setFlags drops ItemSendsGeometryChanges), its X/Y written only at release, and bgfx places the geometry by X/Y; fix in build r77, NOT committed, not pushed, not staged. 13:26 FIXED `0c28946f6d` LOCAL, not pushed, not staged (group flags dropped by setFlags, an upstream slip) |
 | 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too. ANSWERED 09:51: EVERY VIEW; the rule: wherever an area is RENDERED TRANSPARENT, the click goes THROUGH. ANSWERED 09:53: ANYTHING NON-TRANSPARENT registers a click; a HIDDEN FRAME does NOT (reverses entry 149's band along a hidden frame). 11:02 in build r77, NOT committed, not pushed, not staged: part views and groups by the frame band only while the frame is shown, plus label and caption; image, symbol, spreadsheet, annotation, rich text where drawn (alpha mask, 0.5 mm); CONSEQUENCE: a view with a hidden frame and no label cannot be grabbed to drag. 11:20: the reporter asks what a hidden frame is -- the page's frames toggled off: border AND label not drawn (the label kept only by KeepLabel); "if not [shown] then non-draggable is only natural" -- the consequence ACCEPTED. 11:22 CHANGED: with the page's frames HIDDEN, a view still SHOWS ITS FRAME while ANYTHING IN IT is SELECTED; once shown it can be dragged. ANSWERED 11:24: the LABEL shows with the frame; NO hover; a projection group shows the GROUP's frame. 13:26 DONE `6af132eb0b` LOCAL, not pushed, not staged: picture/symbol/annotation/rich annotation picked where drawn; the frame band only while shown; frames hidden -> a view with something selected shows frame+label and can be dragged; a group's view -> the group frame; no hover |
 | 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels. 11:02 in build r77, NOT committed, not pushed, not staged: each pack writes NaviCube/ThemeAxisLabelColor (light grey dark packs, black light); AxisLabelColor by hand first. 13:26 DONE `5cdcce4ece` LOCAL, not pushed, not staged: ThemeAxisLabelColor in each pack; a hand-set AxisLabelColor wins |
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed. 10:22: the timer's sync must NOT AUTO-SCROLL the tree; the reporter ASKS the note-taker to elaborate the edit-session exception -- elaborated under the entry, a question back (SyncView into a view in an edit). 11:29 RULED case 2: a tree selection EXCLUDES the editing view and BLOCKS the switch to it ONLY IF that view is NOT SHOWN; if it is VISIBLE, switch and broadcast as usual. 11:38 CONFIRMED both: the click reaches a visible editing view's task selection too; "shown" = on screen now; the rationale: what the user SEES, the tree reaches |
-| 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more. 11:02: a probe times the first page show in build r77. 13:26 NOT REPRODUCED offscreen by the build session; a run on the REAL SCREEN OK'd by the reporter (said to the build session, relayed), queued after r81. 13:28 the reporter's words, relayed: "entry 158, you launch using real graphics and try" |
+| 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more. 11:02: a probe times the first page show in build r77. 13:26 NOT REPRODUCED offscreen by the build session; a run on the REAL SCREEN OK'd by the reporter (said to the build session, relayed), queued after r81. 13:28 the reporter's words, relayed: "entry 158, you launch using real graphics and try". 14:29 MEASURED on the real screen by the build session: Page009 opened 45 s after the load -> no stall; opened 8 s after -> 5.5-5.9 s of stalls (longest 1.5-1.9 s), Qt or vector; control without the page 3.4-3.6 s (the progressive load finishing) -> the page adds about 2 s when opened before the load ends; NOT fixed yet |
 | 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too. 10:44: the reporter -- the outline needs getDetailPath / getPickedElement to route a special element name to the handle's Coin node; "check if it's possible first" -- the note-taker's check (reading): the NAMES can be routed (Sketcher does), but the handles hang OUTSIDE the selection root whose render cache draws the outline, so naming alone does not reach it. 10:52 RULED: way B -- the handles stay in the editing root, the edit capture gets an outline (bgfx overlay highlight; a render cache for the Coin edit root); A rejected, it "defeats per view edit". 10:54: element-name routing ONLY IF NECESSARY -- by the note-taker's reading NOT needed (a handle's hover is found by its own node, its path can feed the edit highlight directly) |
-| 160 | 2026-10-16 | a defect and a change request: FILLET EDITING -- the fillet FACE of a MISSING edge reference is GONE (yesterday it was there, its highlight working), after entry 143's skip-and-red; and NEW: HOVERING an EDGE ITEM in the task panel highlights its fillet face, normal and missing alike, with the SILHOUETTE OUTLINE following the selection style | OPEN; by the note-taker's reading a regression of 143. ANSWERED 11:08: scanner.FCStd, OPEN then RECOMPUTE -> a missing edge on Adaptor, the failed fillet face MISSING; yesterday the same operation showed it. 13:26 a FIX (a missing edge keeps its fillet face after a reopen) building r81, its test being re-run; NOT committed; the hover request not started |
+| 160 | 2026-10-16 | a defect and a change request: FILLET EDITING -- the fillet FACE of a MISSING edge reference is GONE (yesterday it was there, its highlight working), after entry 143's skip-and-red; and NEW: HOVERING an EDGE ITEM in the task panel highlights its fillet face, normal and missing alike, with the SILHOUETTE OUTLINE following the selection style | OPEN; by the note-taker's reading a regression of 143. ANSWERED 11:08: scanner.FCStd, OPEN then RECOMPUTE -> a missing edge on Adaptor, the failed fillet face MISSING; yesterday the same operation showed it. 13:26 a FIX (a missing edge keeps its fillet face after a reopen) building r81, its test being re-run; NOT committed; the hover request not started. 14:29 the missing-face fix DONE `c33e177bcf` LOCAL, not pushed, not staged (TestFillet 24 OK on r81); the hover request not reported started |
 | 161 | 2026-10-16 | a question (said to the build session, relayed): the company's malware defender, APEX, flagged FreeCAD.exe as UNAUTHORIZED FILE ENCRYPTION -- any clue? | OPEN; the reporter: "continue, I'll see what to do if it got triggered again"; the build session's guess (not confirmed): the .FCStd save, a zip written to a temp file and renamed over |
+| 162 | 2026-10-16 | a request (said to the build session, relayed): find what the INVALID NAME LENGTH warnings are when opening `scanner.FCStd` | OPEN; the build session: 21 warnings "<ElementMap> ElementMap.cpp(2401): invalid name length ..." at every GUI open since 10-10..10-12, none headless; all from the colour walk of eight PD features INSIDE the read (39c692c6c5, 10-08); the after-read settle pass never ran (264 in-read, 0 settle) under the progressive load; a FIX building r83, not committed |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21052,6 +21060,12 @@ READ in the source, nothing run: `src/Mod/PartDesign/Gui/Workbench.cpp`
 `src/Gui/TaskView/TaskView.cpp` 1485 (`updateWatcher()`, a 200 ms timer)
 and 1123 (`showForActiveView()`).
 
+**2026-10-16 14:29, the build session's state (its ~15:40):** DONE in
+`0a899727e2`, LOCAL, not pushed, not staged -- PartDesign's task
+watchers show only while the active view is a 3D view. Its test 6/6 on
+r82 (the test needed a template on its page). Points a-c of this entry
+still not asked of the reporter.
+
 ## 153. Shorten the overlay's wheel capture timeout: zoom, then the tree's wheel still zooms too long (a change request) -- OPEN; ANSWERED 09:57 -- the default 300 ms, the logic kept
 
 **2026-10-16 09:42, the reporter:** "new request, reduce wheel capture timeout,
@@ -21522,6 +21536,18 @@ you launch using real graphics and try"
 The note-taker's reading: the OK for a run on the real screen (not
 offscreen) that the build session reported at its 14:00 state above.
 
+**2026-10-16 14:29, the build session's measurement on the real screen
+(its ~15:40, the run the reporter OK'd):** Page009 opened by double-click
+45 s after the load -> NO stall. Opened 8 s after the load -> 5.5 to 5.9 s
+of event-loop stalls (the longest 1.5 to 1.9 s), under Qt or the vector
+page alike. The control, 8 s and the page NOT opened -> 3.4 to 3.6 s of
+stalls (the progressive load still finishing). So the page adds about
+2 s when it is opened before the load ends; the rest is the load itself.
+NOT fixed yet.
+The note-taker's reading: the reporter's "about 5 seconds or more" (10:17)
+matches the 8 s case; the freeze the reporter sees is mostly the load
+still running, not the page.
+
 ## 159. PartDesign on-view edit: a click that selects nothing clears the active handle; why the handles have no silhouette outline (a change request, a question) -- OPEN
 
 **2026-10-16 10:37, the reporter:** "new request. in partdesign on view edit. a
@@ -21735,6 +21761,12 @@ a missing edge keeps its fillet face after a reopen -- building in r81,
 its test being re-run; NOT committed. The hover-highlight request: not
 reported started.
 
+**2026-10-16 14:29, the build session's state (its ~15:40):** the
+missing-face fix DONE in `c33e177bcf`, LOCAL, not pushed, not staged --
+a dress-up edge gone at the first recompute after a reopen keeps its
+fillet face. TestFillet 24 OK on r81. The hover-highlight request: not
+reported started.
+
 ## 161. Apex flags FreeCAD.exe as unauthorized file encryption (a question) -- OPEN; relayed, said to the build session
 
 **2026-10-16, said to the build session (the note-taker did not hear it;
@@ -21750,6 +21782,33 @@ an auto-save/recovery write, a test run of the build session's); b.
 whether Apex blocked or quarantined anything, or only warned; c. whether
 the staged copy or a build tree's FreeCAD.exe was flagged.
 
+## 162. The "invalid name length" warnings when opening scanner.FCStd (a request) -- OPEN; relayed, said to the build session; a fix building
+
+**2026-10-16, said to the build session (the note-taker did not hear it;
+relayed 14:29, the build session's number kept):** "check what's those
+invalid name length warning when opening the scanner document"
+**The build session's finding so far (its ~15:40):** 21 warnings
+"<ElementMap> ElementMap.cpp(2401): invalid name length ..." at EVERY GUI
+open of `scanner.FCStd` since between 10-10 and 10-12; NONE on a headless
+open. A temporary trace (r82): all 21 come from the colour walk of eight
+PartDesign features (Pad, Pad001, Pad003, Pocket..Pocket003, Fillet),
+done INSIDE the read (ViewProviderPartExt::finishAppearance ->
+updateAppearance(whileRestoring=true), from `39c692c6c5` of 10-08). The
+same features' histories walked headless after the load are clean. The
+pass meant to redo it after the read (settleAdopted) NEVER ran: 264
+objects got the in-read pass, 0 the settle pass -- under the progressive
+load the view providers are made after the App's "document read" signal.
+Fix being built (r83): the settle pass waits for the progressive load to
+end; the in-read pass no longer walks sources. Being checked: the
+warnings gone, the settle pass runs, every Part object's face colours the
+same before and after.
+The note-taker's reading: if the settle pass never ran, colours that
+depend on a source's (a base feature's) colours may have been left as
+the in-read pass made them on every GUI open since 10-08 -- the
+build session's before/after colour check covers that.
+NOT said: a. whether the reporter saw any wrong face colour on
+`scanner.FCStd` (only the warnings were asked about).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -21761,5 +21820,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 161
+the build session, 131 and 132 found by it; entries 134 to 162
 are of 2026-10-15, 134 said to the build session)
