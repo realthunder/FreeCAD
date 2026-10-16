@@ -168,6 +168,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 16:12: entry 162 DONE locally (`15289190d8`, `1bcd48431b`) -- 20
+scanner objects now take their source features' face colours, a visible
+change for the reporter to look at; 160's missing edges NOT linked to
+162, a separate cause.** Under the entries.
+
 **2026-10-16 15:43: entry 161 -- the STAGED copy's FreeCAD.exe is GONE since
 13:13 (Apex's quarantine, by the build session's reading; seen by the
 note-taker); 162 -- ROOT CAUSE found and fixed, not committed (index 0
@@ -3257,9 +3262,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed. 10:22: the timer's sync must NOT AUTO-SCROLL the tree; the reporter ASKS the note-taker to elaborate the edit-session exception -- elaborated under the entry, a question back (SyncView into a view in an edit). 11:29 RULED case 2: a tree selection EXCLUDES the editing view and BLOCKS the switch to it ONLY IF that view is NOT SHOWN; if it is VISIBLE, switch and broadcast as usual. 11:38 CONFIRMED both: the click reaches a visible editing view's task selection too; "shown" = on screen now; the rationale: what the user SEES, the tree reaches |
 | 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more. 11:02: a probe times the first page show in build r77. 13:26 NOT REPRODUCED offscreen by the build session; a run on the REAL SCREEN OK'd by the reporter (said to the build session, relayed), queued after r81. 13:28 the reporter's words, relayed: "entry 158, you launch using real graphics and try". 14:29 MEASURED on the real screen by the build session: Page009 opened 45 s after the load -> no stall; opened 8 s after -> 5.5-5.9 s of stalls (longest 1.5-1.9 s), Qt or vector; control without the page 3.4-3.6 s (the progressive load finishing) -> the page adds about 2 s when opened before the load ends; NOT fixed yet |
 | 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too. 10:44: the reporter -- the outline needs getDetailPath / getPickedElement to route a special element name to the handle's Coin node; "check if it's possible first" -- the note-taker's check (reading): the NAMES can be routed (Sketcher does), but the handles hang OUTSIDE the selection root whose render cache draws the outline, so naming alone does not reach it. 10:52 RULED: way B -- the handles stay in the editing root, the edit capture gets an outline (bgfx overlay highlight; a render cache for the Coin edit root); A rejected, it "defeats per view edit". 10:54: element-name routing ONLY IF NECESSARY -- by the note-taker's reading NOT needed (a handle's hover is found by its own node, its path can feed the edit highlight directly) |
-| 160 | 2026-10-16 | a defect and a change request: FILLET EDITING -- the fillet FACE of a MISSING edge reference is GONE (yesterday it was there, its highlight working), after entry 143's skip-and-red; and NEW: HOVERING an EDGE ITEM in the task panel highlights its fillet face, normal and missing alike, with the SILHOUETTE OUTLINE following the selection style | OPEN; by the note-taker's reading a regression of 143. ANSWERED 11:08: scanner.FCStd, OPEN then RECOMPUTE -> a missing edge on Adaptor, the failed fillet face MISSING; yesterday the same operation showed it. 13:26 a FIX (a missing edge keeps its fillet face after a reopen) building r81, its test being re-run; NOT committed; the hover request not started. 14:29 the missing-face fix DONE `c33e177bcf` LOCAL, not pushed, not staged (TestFillet 24 OK on r81); the hover request not reported started |
+| 160 | 2026-10-16 | a defect and a change request: FILLET EDITING -- the fillet FACE of a MISSING edge reference is GONE (yesterday it was there, its highlight working), after entry 143's skip-and-red; and NEW: HOVERING an EDGE ITEM in the task panel highlights its fillet face, normal and missing alike, with the SILHOUETTE OUTLINE following the selection style | OPEN; by the note-taker's reading a regression of 143. ANSWERED 11:08: scanner.FCStd, OPEN then RECOMPUTE -> a missing edge on Adaptor, the failed fillet face MISSING; yesterday the same operation showed it. 13:26 a FIX (a missing edge keeps its fillet face after a reopen) building r81, its test being re-run; NOT committed; the hover request not started. 14:29 the missing-face fix DONE `c33e177bcf` LOCAL, not pushed, not staged (TestFillet 24 OK on r81); the hover request not reported started. 16:12 NOT linked to 162 (build session, r86): the scanner opened and recomputed gives the same result in the GUI and headless -- Fillet011 "Adaptor" misses ?Edge93 ?Edge89, Fillet007 "BaseBottom" misses ?Edge177 ?Edge171, Binder008/Fillet007/Fillet011 invalid; the missing edge a SEPARATE cause, not investigated |
 | 161 | 2026-10-16 | a question (said to the build session, relayed): the company's malware defender, APEX, flagged FreeCAD.exe as UNAUTHORIZED FILE ENCRYPTION -- any clue? | OPEN; the reporter: "continue, I'll see what to do if it got triggered again"; the build session's guess (not confirmed): the .FCStd save, a zip written to a temp file and renamed over. 15:43 the STAGED copy's FreeCAD.exe is GONE (found by the build session; SEEN by the note-taker 15:43, nothing run: `.conda/user-app/bin` has FreeCADCmd.exe, FreeCAD.pdb and the DLLs but no FreeCAD.exe, the folder's mtime 10-16 13:13, the time of the alarm) -- by the build session's reading, not confirmed, Apex QUARANTINED it; the dev build's exe untouched; the reporter's copy does not start until it is back |
-| 162 | 2026-10-16 | a request (said to the build session, relayed): find what the INVALID NAME LENGTH warnings are when opening `scanner.FCStd` | OPEN; the build session: 21 warnings "<ElementMap> ElementMap.cpp(2401): invalid name length ..." at every GUI open since 10-10..10-12, none headless; all from the colour walk of eight PD features INSIDE the read (39c692c6c5, 10-08); the after-read settle pass never ran (264 in-read, 0 settle) under the progressive load; a FIX building r83, not committed. 15:43 ROOT CAUSE FOUND and FIXED by the build session, NOT committed: in a GUI open Document::Restore takes the file's string table ("kept apart", d522d3064a of 09-27) but left index 0 (every shape's HasherIndex) on the table set aside -> element maps built against the wrong table; fix: the taken table re-registered as index 0; on r85 0 warnings (21 before); the settle pass runs (264 of 264); 313 objects' face colours identical before/after; a link to 160 not checked |
+| 162 | 2026-10-16 | a request (said to the build session, relayed): find what the INVALID NAME LENGTH warnings are when opening `scanner.FCStd` | OPEN; the build session: 21 warnings "<ElementMap> ElementMap.cpp(2401): invalid name length ..." at every GUI open since 10-10..10-12, none headless; all from the colour walk of eight PD features INSIDE the read (39c692c6c5, 10-08); the after-read settle pass never ran (264 in-read, 0 settle) under the progressive load; a FIX building r83, not committed. 15:43 ROOT CAUSE FOUND and FIXED by the build session, NOT committed: in a GUI open Document::Restore takes the file's string table ("kept apart", d522d3064a of 09-27) but left index 0 (every shape's HasherIndex) on the table set aside -> element maps built against the wrong table; fix: the taken table re-registered as index 0; on r85 0 warnings (21 before); the settle pass runs (264 of 264); 313 objects' face colours identical before/after; a link to 160 not checked. 16:12 DONE `15289190d8` + `1bcd48431b` LOCAL, not pushed, not staged (r86: 0 warnings; new GUI tests 3/3 and 4; Document.py 236, Part appearance 35 OK). A VISIBLE CHANGE for the reporter to look at: 20 scanner objects now draw their faces in their source features' colours (each drew in ONE colour before) -- by the build session's reading the mapping working again as before ~10-11, NOT confirmed by the reporter |
 | 163 | 2026-10-16 | a question (said to the build session, relayed): why a DIALOG keeps POPPING UP saying some DLL is not accessible | OPEN; the exact text asked of the reporter by the build session; candidates (the build session's): its own launches without the conda PATH (0xC0000135, a Windows system box even for a hidden process), or Apex blocking the staged copy's DLLs (see 161) |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -21774,6 +21779,16 @@ a dress-up edge gone at the first recompute after a reopen keeps its
 fillet face. TestFillet 24 OK on r81. The hover-highlight request: not
 reported started.
 
+**2026-10-16 16:12, the build session (its ~16:30): NOT linked to 162.**
+The scanner copy opened and recomputed on r86 (162's fix in) gives the
+same result in the GUI and headless: Fillet011 "Adaptor" misses ?Edge93
+?Edge89; Fillet007 "BaseBottom" misses ?Edge177 ?Edge171; Binder008,
+Fillet007 and Fillet011 are invalid. The missing edge has a SEPARATE
+cause, not investigated.
+NOT said: a. whether the reporter wants the missing edges themselves
+investigated (the entry asked for the fillet face to stay and for the
+hover highlight, not for the edges to be found).
+
 ## 161. Apex flags FreeCAD.exe as unauthorized file encryption (a question) -- OPEN; relayed, said to the build session
 
 **2026-10-16, said to the build session (the note-taker did not hear it;
@@ -21849,6 +21864,21 @@ to the wrong table -> renames on a recompute) NOT checked yet.
 The note-taker's reading: the earlier reading under this entry (the
 in-read colour walk as the source of the warnings) is superseded --
 that walk only exposed the wrong table.
+
+**2026-10-16 16:12, the build session (its ~16:30): DONE, LOCAL, not
+pushed, not staged** -- `15289190d8` (App: the string table the restore
+takes is index 0) and `1bcd48431b` (Part/Gui: the after-load colour pass
+waits for the GUI's load; it ran for 0 of 264 objects before). The
+temporary traces removed. Tests on r86: shape-string-table-after-gui-open.py
+3/3, binder-map-color-restore.py 4, Document.py 236 OK, Part appearance 35
+OK. Scanner: 0 warnings (21 before).
+**A VISIBLE CHANGE for the reporter to look at:** on the scanner, 20
+objects -- Boolean001, Helix002, Hole003/006/007, Pad039/040/051,
+Pocket022-025/027/028/032/034/039/040, PolarPattern004, Split -- now draw
+their faces in the colours their source features give them; before the
+fix each drew in ONE colour. The build session's reading: the mapping
+working again, as before ~10-11. NOT confirmed by the reporter.
+The log: docs/HandsOnLog.md, "Entries 152, 158, 160, 162".
 
 ## 163. A dialog keeps popping up saying some DLL is not accessible (a question) -- OPEN; relayed, said to the build session; the exact text asked
 
