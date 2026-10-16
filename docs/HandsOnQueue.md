@@ -173,6 +173,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 18:15: NEW entry 167 (critical by the reporter) -- scanner.FCStd
+saved unasked: ONE save at 18:06:52 by the reporter's own staged FreeCAD
+(the history inside the file says so), schema 4 -> 5; no self-saving code
+found by reading. 165 b and 166 a/b answered.** Under the entries.
+
 **2026-10-16 18:05: entry 165 ANSWERED -- the expression editors too; /error over
 all open documents, built per showing; a clash: no "<<" favours the
 label, "<<" the internal name (as said; asked whether reversed).** Under
@@ -3336,8 +3341,9 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 162 | 2026-10-16 | a request (said to the build session, relayed): find what the INVALID NAME LENGTH warnings are when opening `scanner.FCStd` | OPEN; the build session: 21 warnings "<ElementMap> ElementMap.cpp(2401): invalid name length ..." at every GUI open since 10-10..10-12, none headless; all from the colour walk of eight PD features INSIDE the read (39c692c6c5, 10-08); the after-read settle pass never ran (264 in-read, 0 settle) under the progressive load; a FIX building r83, not committed. 15:43 ROOT CAUSE FOUND and FIXED by the build session, NOT committed: in a GUI open Document::Restore takes the file's string table ("kept apart", d522d3064a of 09-27) but left index 0 (every shape's HasherIndex) on the table set aside -> element maps built against the wrong table; fix: the taken table re-registered as index 0; on r85 0 warnings (21 before); the settle pass runs (264 of 264); 313 objects' face colours identical before/after; a link to 160 not checked. 16:12 DONE `15289190d8` + `1bcd48431b` LOCAL, not pushed, not staged (r86: 0 warnings; new GUI tests 3/3 and 4; Document.py 236, Part appearance 35 OK). A VISIBLE CHANGE for the reporter to look at: 20 scanner objects now draw their faces in their source features' colours (each drew in ONE colour before) -- by the build session's reading the mapping working again as before ~10-11, NOT confirmed by the reporter. 17:33 PUSHED 17:32:50 (`54b5805b13`, by the reflog), on the reporter's word to the build session; the restage from build r86 RUNNING. 17:34 STAGED 17:34:10 CLEAN (INSTALLED.txt: fcad `0bcd954c01`, code = pushed `54b5805b13`, FreeCADGui 15:49:19 = build r86) |
 | 163 | 2026-10-16 | a question (said to the build session, relayed): why a DIALOG keeps POPPING UP saying some DLL is not accessible | OPEN; the exact text asked of the reporter by the build session; candidates (the build session's): its own launches without the conda PATH (0xC0000135, a Windows system box even for a hidden process), or Apex blocking the staged copy's DLLs (see 161) |
 | 164 | 2026-10-16 | a change request: the FULL OBJECT NAME (docname@objname) in the error message "<Exception> SubShapeBinder.cpp(330): No context, please double click the binder in the desired context to refresh"; and an AUDIT of the code base for this kind of message reported by an object's execute(), each to mention the object's name | OPEN; read by the note-taker, nothing run: a recompute's exception is printed by `e.ReportException()` in Document::_recomputeFeature (Document.cpp 15286-15290) WITHOUT the object; the name goes only to an FC_LOG line (log level, not shown by default), as getFullName = "doc#obj". 17:41 ADDED: "check why this error does not mark the binder as recompute error" -- read by the note-taker, nothing run: BOTH of the message's paths mark the object (setErrorDescription and the recompute's catch reach addRecomputeLog, which sets ObjectStatus::Error), so the mark is either SWALLOWED (slotRecomputedObject, SubShapeBinder.cpp 1124-1134, catches update()'s throw with ReportException only) or CLEARED by a later successful update/recompute; NOT found by reading. 17:46 the build session takes it after 160; it would use the existing "doc#obj" unless told '@'. 17:52 the 17:41 question WITHDRAWN by the reporter: the binder found, Binder008, and it IS marked as an error -- the note-taker's two candidates (swallowed, cleared) moot; the request (the name in the message, the audit) stands |
-| 165 | 2026-10-16 | a change request: OMNI SEARCH -- (1) a new type /error filtering on ALL objects marked as RECOMPUTE ERROR; (2) the OBJECT LIST in the completer: ONE item per object, not separate name and label items; the label, as <<label>>, in the item's DESCRIPTION (and TOOLTIP) when it differs, leading, then the object's usual description; TAB completes to <<label>> (not the internal name) when the typing starts with << or matches a label that differs from the name; this completion for BOTH the unfiltered and the /error list | OPEN; read by the note-taker, nothing run: the object list is ExpressionCompleter's (OmniSearchBox.cpp 1037/1041), which lists a name row and a label row per object (ExpressionCompleter.cpp 262-270) and is SHARED with the expression editors. 18:05 ANSWERED: the EXPRESSION EDITORS too; /error over ALL OPEN DOCUMENTS; the list built per showing, no live refresh; a clash -- typing NOT led by << favours the LABEL, led by << favours the INTERNAL NAME (as said; the note-taker asks whether the two are the other way round) |
-| 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt. 18:04 the build session: the SAME four warnings, TWICE, in the FIRST recompute after a FRESH HEADLESS open of a scanner copy (r86, ~17:40, no revert) -- so NOT the revert's doing; the reporter's GUI first open at 17:36 printed NONE (the note-taker re-checked the live copy: all 8 lines are after the revert); why the GUI first open is silent not known |
+| 165 | 2026-10-16 | a change request: OMNI SEARCH -- (1) a new type /error filtering on ALL objects marked as RECOMPUTE ERROR; (2) the OBJECT LIST in the completer: ONE item per object, not separate name and label items; the label, as <<label>>, in the item's DESCRIPTION (and TOOLTIP) when it differs, leading, then the object's usual description; TAB completes to <<label>> (not the internal name) when the typing starts with << or matches a label that differs from the name; this completion for BOTH the unfiltered and the /error list | OPEN; read by the note-taker, nothing run: the object list is ExpressionCompleter's (OmniSearchBox.cpp 1037/1041), which lists a name row and a label row per object (ExpressionCompleter.cpp 262-270) and is SHARED with the expression editors. 18:05 ANSWERED: the EXPRESSION EDITORS too; /error over ALL OPEN DOCUMENTS; the list built per showing, no live refresh; a clash -- typing NOT led by << favours the LABEL, led by << favours the INTERNAL NAME (as said; the note-taker asks whether the two are the other way round). 18:10 ANSWERED b: "usual description" = what the expression editor's previous build showed as the object's TOOLTIP (internal name, label, Description/Label2 -- ExpressionCompleter.cpp 610-626) |
+| 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt. 18:04 the build session: the SAME four warnings, TWICE, in the FIRST recompute after a FRESH HEADLESS open of a scanner copy (r86, ~17:40, no revert) -- so NOT the revert's doing; the reporter's GUI first open at 17:36 printed NONE (the note-taker re-checked the live copy: all 8 lines are after the revert); why the GUI first open is silent not known. 18:10 ANSWERED: the recompute after the revert BY HAND; NOTHING looked wrong |
+| 167 | 2026-10-16 | a defect (CRITICAL by the reporter's word): `scanner.FCStd` was SAVED, "someone (not me)"; check whether there is a transaction log inside; find new code that may cause it | OPEN; READ by the note-taker (the file and the reporter's console logs, read only): saved 18:06:52 (LastModifiedDate 10:06:52Z), schema 4 -> 5, 9.2 MB; it HOLDS a history (blobs/History.db, zstd): ONE session, the reporter's own staged FreeCAD (build hash b076aae675) opened 17:36:03, ONE save at txn 21 (18:06:52); the file was still schema 4 at the revert's read 17:59:07, so ONE save, not several; nothing in the console at 18:06:52; NO code found that saves unasked |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -22229,6 +22235,15 @@ The note-taker's reading:
 - e. NOT answered (the note-taker's reading stands: with label == name,
   the usual description alone).
 
+**2026-10-16 about 18:10, the reporter answers b:** "entry 165, usual
+description is how expression editor previous build as the tooltips for
+the object"
+The note-taker's reading: the "usual description" is the completer's
+object tooltip as built before -- "Internal name: X / Label: Y /
+Description: <Label2>" (ExpressionCompleter.cpp 610-626, READ in the
+source); the new description and tooltip LEAD with <<label>> (when it
+differs), then that content.
+
 ## 166. After a revert of scanner.FCStd the blob manager warns included files are missing (a defect) -- OPEN
 
 **2026-10-16 18:01, the reporter:** "new defect, check console error in my live
@@ -22292,6 +22307,64 @@ to be the cause; what differs between the GUI's first open and the
 others is the open question (the progressive load of a GUI open, entry
 162's string-table and settle work, is one difference -- a guess).
 
+**2026-10-16 about 18:10, the reporter answers a and b:** "entry 166, recompute by
+hand. nothing looked wrong."
+
+## 167. scanner.FCStd saved by "someone (not me)" (a defect, critical by the reporter) -- OPEN
+
+**2026-10-16 about 18:10, the reporter:** "I just found out one critical fact.
+someone (not me) saved scanner file just now (may have been saved
+multiple times already, check if there is transaction log inside). check
+any new code that may caused this"
+**What the note-taker READ** (the file, the reporter's console logs under
+%APPDATA%\FreeCAD; nothing written to either, nothing run in a FreeCAD):
+- `D:\Zheng.Lei\mech\scanner.FCStd`: modified 2026-10-16 18:06:56,
+  9243622 bytes (the backup beside it, scanner.20261006-091732.FCBak, is
+  6119171); Document.xml: SchemaVersion="5", ProgramVersion "0.22R35485
+  +11461 (Git)", LastModifiedDate "2026-10-16T10:06:52Z" (18:06:52 here),
+  LastModifiedBy empty.
+- YES, a TRANSACTION LOG is inside: `blobs/History.db` (3461120 bytes,
+  zstd in the archive; a copy unpacked read-only, kept at
+  `D:\works\sw\dl\handson\2026-10-16\e167-scanner-History-1806.db`).
+  It holds ONE session: kind "local", opened 17:36:03, closed 18:06:52;
+  its environment: ExeName "FreeCAD" (the GUI), BuildRevisionHash
+  b076aae675 (the build staged at 17:34 -- the reporter's own copy),
+  OCC 8.0.1. 21 transactions: the open's implicit steps 17:36:18-29, a
+  recompute 17:36:58 (29 s), an implicit step 17:59:20, a SNAPSHOT
+  17:59:36 (the revert; path D:/Zheng.Lei/mech/scanner.FCStd, schema 5,
+  359 blobs), the recompute 18:00:33 (44 s), implicit steps 18:00:33-34,
+  and ONE MORE implicit step at 18:06:05 -- 47 s before the save. meta:
+  save_date 2026-10-16T10:06:52Z, one save id ("2 21": version 2 at txn
+  21).
+- ONE save, not several, by the logs: every session's console says
+  "'scanner' is in an older file format (schema 4)" at the open -- 10-14
+  15:46, 10-15 09:22 and 15:07, 10-16 09:33, 17:36:04 -- and AGAIN at
+  17:59:07, the revert's read. So the file was still schema 4 at
+  17:59:07; the schema 5 file is the one save at 18:06:52.
+- The process that saved is the reporter's own FreeCAD of 17:36 (the
+  history's session and build), not another program; the session's
+  console (`mcp_console.log`, kept at
+  `dl\handson\2026-10-16\e166-mcp_console-session-1736.log`) has NOTHING
+  between 18:00:33 and 18:11:51 (the exit) -- a save writes no console
+  line, and a command typed or run (`App.getDocument(...).save()`) is
+  not in that log.
+The note-taker's reading, READ in the source, nothing run -- no code
+found that saves by itself: the saves are Std_Save/SaveAs/SaveAll
+(CommandDoc.cpp 708-935), the close-confirm box's Save
+(MainWindow.cpp 1360-1379), an MDI view's "Save" message -- Ctrl+S to
+the active view (MDIView.cpp 338-341), Gui::Document's save paths
+(Document.cpp 2288, 2609), and Python. The AutoSaver writes NOTHING
+with the transaction log on (AutoSaver.cpp 139-145, "the log is the
+autosave"), and the log's snapshots go to the log store, not the
+project file (TransactionLog.md sec 22.1, 25.5). The 18:06:05 implicit
+step, 47 s before the save, is the one lead the history gives -- what
+it changed is in its `op` rows (not yet read).
+NOT said: a. what the reporter did around 18:06 (a dialog answered, a
+document or tab closed, a key pressed, the build session's tools at
+work); b. whether the save is a problem for the file's CONTENT or for
+its FORMAT (schema 5 -- "which only this FreeCAD reads") -- the older
+copy beside it is the 10-06 backup.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -22303,5 +22376,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 166
+the build session, 131 and 132 found by it; entries 134 to 167
 are of 2026-10-15, 134 said to the build session)
