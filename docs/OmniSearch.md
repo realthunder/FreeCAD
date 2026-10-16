@@ -106,11 +106,11 @@ editor alike. The row shows the internal name; where the label differs,
 the description line (the tooltip in an expression editor) leads with
 `<<Label>>`, followed by what the tooltip always said: internal name, label
 and description. The row is found by either name, and what it inserts
-follows the typing: text that begins with `<<` inserts the `<<Label>>`,
-unless what follows the `<<` begins the internal name as well, where the
-name wins; text without it inserts the `<<Label>>` whenever it matches the
-label (a clash favours the label), the internal name otherwise. Nothing
-typed yet inserts the name, a lone `<<` the label. A component already
+follows the typing: text that begins with `<<` inserts the `<<Label>>`;
+text without it inserts the internal name whenever it matches the name,
+and the `<<Label>>` only when it matches the label alone -- "with << label
+wins, without internal name wins" (the reporter, on a typing that matches
+both). Nothing typed yet inserts the name, a lone `<<` the label. A component already
 typed in full in front of a dot keeps the form it was typed in. A document
 still has a name row and, where the label differs, a `<<Label>>#` row.
 

@@ -1127,8 +1127,8 @@ bool OmniSearchEdit::activateErrorRow(const QModelIndex &index, bool tab)
 
     // The object completer's <<label>> rule (docs/HandsOnQueue.md entry
     // 165) over what was typed after "/error ": a leading "<<" inserts the
-    // label unless the rest begins the internal name as well; without it
-    // the label is inserted whenever the typing is part of it.
+    // label; without it the internal name, unless the typing is part of the
+    // label alone -- "with << label wins, without internal name wins".
     const QString name = QString::fromUtf8(obj->getNameInDocument());
     const QString label = QString::fromUtf8(obj->Label.getValue());
     bool useLabel = false;
@@ -1140,12 +1140,9 @@ bool OmniSearchEdit::activateErrorRow(const QModelIndex &index, bool tab)
             if (t.endsWith(QLatin1String(">>")))
                 t.chop(2);
         }
-        if (t.isEmpty())
-            useLabel = led;
-        else if (led)
-            useLabel = !name.startsWith(t, Qt::CaseInsensitive);
-        else
-            useLabel = label.contains(t, Qt::CaseInsensitive);
+        useLabel = led
+            || (!t.isEmpty() && label.contains(t, Qt::CaseInsensitive)
+                && !name.contains(t, Qt::CaseInsensitive));
     }
     QString path = useLabel ? QString::fromUtf8(App::quote(obj->Label.getStrValue()).c_str())
                             : name;

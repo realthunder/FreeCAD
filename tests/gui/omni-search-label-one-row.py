@@ -14,6 +14,9 @@ A box Crate labelled "Lid", a cylinder Pillar, and a cut with nothing to cut,
 in error. Claims:
   - "/ Li": one row for Crate, its description led by <<Lid>>;
   - Tab on "/ Li": "/ <<Lid>>"; on "/ Cra": "/ Crate"; on "/ <<L": "/ <<Lid>>";
+  - a clash, a cylinder Pillar labelled "Pillar post": Tab on "/ Pil" gives
+    "/ Pillar", on "/ <<Pil" "/ <<Pillar post>>" ("with << label wins,
+    without internal name wins", the reporter 23:52);
   - "/error ": the cut is listed, Crate and Pillar are not.
 
 Run with QT_QPA_PLATFORM=offscreen, as omni-search-object-typing.py.
@@ -152,7 +155,8 @@ def start():
     doc = FreeCAD.newDocument(DOC)
     crate = doc.addObject("Part::Box", "Crate")
     crate.Label = "Lid"
-    doc.addObject("Part::Cylinder", "Pillar")
+    pillar = doc.addObject("Part::Cylinder", "Pillar")
+    pillar.Label = "Pillar post"
     doc.addObject("Part::Cut", "Broken")
     doc.recompute()
     note("INFO in error: %s" % [o.Name for o in doc.Objects if "Invalid" in o.State])
@@ -198,6 +202,10 @@ def tabs():
     tab("/ Li", "/ <<Lid>>")
     tab("/ Cra", "/ Crate")
     tab("/ <<L", "/ <<Lid>>")
+    # a clash: "Pil" begins the name Pillar and its label "Pillar post" --
+    # "with << label wins, without internal name wins" (the reporter, 23:52)
+    tab("/ Pil", "/ Pillar")
+    tab("/ <<Pil", "/ <<Pillar post>>")
 
 
 def errors():

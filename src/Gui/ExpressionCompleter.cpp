@@ -643,8 +643,6 @@ public:
 
             if(!led && typed.compare(name, cs) == 0) {
                 res.match = name;
-                res.label = last && (contains ? label.contains(typed, cs)
-                                              : label.startsWith(typed, cs));
                 return res;
             }
             if(led && typed.compare(quoted, cs) == 0) {
@@ -668,10 +666,10 @@ public:
             };
             const bool matchName = matches(name);
             const bool matchLabel = matches(label);
-            if(t.isEmpty())
-                res.label = led;
-            else
-                res.label = led ? !matchName : matchLabel;
+            // "with << label wins, without internal name wins" (the reporter,
+            // docs/HandsOnQueue.md entry 165): a leading "<<" takes the
+            // label; without it the label only where the name does not match
+            res.label = led || (!t.isEmpty() && matchLabel && !matchName);
             if(led) {
                 res.match = (matchLabel || !matchName)
                     ? quoted + QLatin1Char(' ') + name
