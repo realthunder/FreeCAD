@@ -2169,7 +2169,8 @@ namespace
  * scanner.FCStd said four of them were missing (docs/HandsOnQueue.md entry
  * 166).
  */
-FileBlobHandle fromOpenDocuments(FileBlobManager& manager, const std::string& hash)
+FileBlobHandle fromOpenDocuments(FileBlobManager& manager, const std::string& hash,
+                                 std::string& source)
 {
     for (auto doc : GetApplication().getDocuments()) {
         auto& other = doc->getFileBlobManager();
@@ -2184,6 +2185,7 @@ FileBlobHandle fromOpenDocuments(FileBlobManager& manager, const std::string& ha
             const std::string ext = blob->extension();
             auto mine = manager.adoptBytes(bytes, ext.c_str());
             if (mine && mine->hash() == hash) {
+                source = doc->getName();
                 return mine;
             }
         }
@@ -2213,7 +2215,18 @@ void FileBlobManager::dispatchPending()
     for (const auto& entry : pending) {
         auto blob = find(entry.first);
         if (!blob) {
-            blob = fromOpenDocuments(*this, entry.first);
+            // A safety net, not the way a copy should get its files: the
+            // reporter, "Keep as safe net, but print warning"
+            // (docs/HandsOnQueue.md entry 166). Said, so a copy that left a
+            // file behind is not hidden.
+            std::string source;
+            blob = fromOpenDocuments(*this, entry.first, source);
+            if (blob) {
+                auto prop = dynamic_cast<Property*>(entry.second);
+                FC_WARN("Included file " << entry.first << " was missing from the document; "
+                        << "taken from open document '" << source << "' for "
+                        << (prop ? prop->getFullName() : std::string("a property")));
+            }
         }
         if (blob) {
             entry.second->assignRestoredBlob(blob);

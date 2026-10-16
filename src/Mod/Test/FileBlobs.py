@@ -1137,6 +1137,35 @@ class BlobExportImportCases(BlobTestCase):
         target.saveAs(project)
         self.assertEqual(len(self.blobEntries(project)), 1)
 
+    @unittest.skipUnless(HAS_PART, "Part module not available")
+    def testCopyFromASavedDocumentCarriesItsContent(self):
+        """The copy is exported from the target, but the source's properties
+        answer to the source's manager. Once the source had been saved with
+        shared entries, that manager still said so during the export, and the
+        shapes were written as a hash the fragment did not carry -- found
+        again only because the source was open, with a warning (entry 166:
+        a binder's temporary copy of scanner.FCStd)."""
+        source = self.newDocument("BlobSource")
+        target = self.newDocument("BlobTarget")
+        box = source.addObject("Part::Feature", "Box")
+        box.Shape = Part.makeBox(1, 2, 3)
+        self.fileObject(source, "File1", b"carried")
+        source.saveAs(self.projectPath("source.FCStd"))
+        heard = []
+
+        def listen(notifier, message, level):
+            if "was missing" in message:
+                heard.append(message)
+
+        FreeCAD.Console.AttachObserver(listen)
+        try:
+            copies = target.copyObject([box, source.getObject("File1")])
+        finally:
+            FreeCAD.Console.DetachObserver(listen)
+        self.assertEqual(heard, [])
+        self.assertAlmostEqual(copies[0].Shape.Volume, 6.0)
+        self.assertContent(copies[1], b"carried")
+
 
 # ---------------------------------------------------------------------------
 # a string property whose stored form is a shared file

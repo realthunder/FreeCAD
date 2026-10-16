@@ -3161,6 +3161,25 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     // carrying content belonging to the rest of the document.
     getFileBlobManager().beginSave(writer);
     collectFileBlobs(obj);
+    // A property answers to the manager of its own object's document
+    // (FileBlobManager::managerFor), and copyObject() exports another
+    // document's objects from this one -- a binder's temporary copy does.
+    // Their managers have to be told of this save too, or they keep the
+    // format of their own last save, and a shape written under it named a
+    // file by hash that this fragment never carried: four missing files on
+    // the first recompute of scanner.FCStd (docs/HandsOnQueue.md entry 166).
+    std::map<Document*, std::vector<DocumentObject*>> others;
+    for (auto o : obj) {
+        auto doc = o ? o->getDocument() : nullptr;
+        if (doc && doc != this) {
+            others[doc].push_back(o);
+        }
+    }
+    for (auto& v : others) {
+        v.first->d->hashers.clear();
+        v.first->getFileBlobManager().beginSave(writer);
+        v.first->collectFileBlobs(v.second);
+    }
 
     writer.putNextEntry("Document.xml");
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n";
@@ -3180,6 +3199,9 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     // The exported objects' included files, before anything the file channel
     // adds -- same layout as a document save.
     getFileBlobManager().writeBlobs(writer);
+    for (auto& v : others) {
+        v.first->getFileBlobManager().writeBlobs(writer);
+    }
 
     // Hook for others to add further data.
     signalExportObjects(obj, writer);
@@ -3187,6 +3209,9 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     // write additional files
     writer.writeFiles();
     d->hashers.clear();
+    for (auto& v : others) {
+        v.first->d->hashers.clear();
+    }
 }
 
 #define FC_ATTR_DEPENDENCIES "Dependencies"
