@@ -2792,6 +2792,17 @@ void Document::Restore(Base::XMLReader &reader)
             else {
                 FC_LOG(getName() << ": string table disagrees with the file's; kept apart");
                 d->Hasher = read;
+                // And it is the table the file's index 0 names: every shape
+                // read from here on takes its table by that index
+                // (PropertyPartShape::Restore, HasherIndex). Left as the
+                // table registered at the top of this restore, a shape got
+                // the one set aside -- strings the document had hashed
+                // before the file was read -- and its element map, built
+                // against it, read back as other names: the "invalid name
+                // length" warnings at a GUI open of scanner.FCStd
+                // (docs/HandsOnQueue.md entry 162).
+                d->hashers.clear();
+                addStringHasher(d->Hasher);
             }
         }
     } else if (!shared) {
