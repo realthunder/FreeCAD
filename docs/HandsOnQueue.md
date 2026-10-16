@@ -173,6 +173,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 19:00: entry 168 RULED -- after the other box merges Branding: a
+save of an old-extension file asks in a dialog (the facts, the new
+format encouraged, the old file kept, a way back), with "don't ask
+again" and a note that Save As saves the new format.** Under the entry.
+
 **2026-10-16 18:55: entry 160 -- why Adaptor's edges go FOUND: Pocket040's
 Fit -0.5 on a profile face flips sign with the face's orientation flag;
 a QUESTION to the reporter on the Fit's sign convention.** Under the
@@ -3358,7 +3363,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 165 | 2026-10-16 | a change request: OMNI SEARCH -- (1) a new type /error filtering on ALL objects marked as RECOMPUTE ERROR; (2) the OBJECT LIST in the completer: ONE item per object, not separate name and label items; the label, as <<label>>, in the item's DESCRIPTION (and TOOLTIP) when it differs, leading, then the object's usual description; TAB completes to <<label>> (not the internal name) when the typing starts with << or matches a label that differs from the name; this completion for BOTH the unfiltered and the /error list | OPEN; read by the note-taker, nothing run: the object list is ExpressionCompleter's (OmniSearchBox.cpp 1037/1041), which lists a name row and a label row per object (ExpressionCompleter.cpp 262-270) and is SHARED with the expression editors. 18:05 ANSWERED: the EXPRESSION EDITORS too; /error over ALL OPEN DOCUMENTS; the list built per showing, no live refresh; a clash -- typing NOT led by << favours the LABEL, led by << favours the INTERNAL NAME (as said; the note-taker asks whether the two are the other way round). 18:10 ANSWERED b: "usual description" = what the expression editor's previous build showed as the object's TOOLTIP (internal name, label, Description/Label2 -- ExpressionCompleter.cpp 610-626) |
 | 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt. 18:04 the build session: the SAME four warnings, TWICE, in the FIRST recompute after a FRESH HEADLESS open of a scanner copy (r86, ~17:40, no revert) -- so NOT the revert's doing; the reporter's GUI first open at 17:36 printed NONE (the note-taker re-checked the live copy: all 8 lines are after the revert); why the GUI first open is silent not known. 18:10 ANSWERED: the recompute after the revert BY HAND; NOTHING looked wrong |
 | 167 | 2026-10-16 | a defect (CRITICAL by the reporter's word): `scanner.FCStd` was SAVED, "someone (not me)"; check whether there is a transaction log inside; find new code that may cause it | OPEN; READ by the note-taker (the file and the reporter's console logs, read only): saved 18:06:52 (LastModifiedDate 10:06:52Z), schema 4 -> 5, 9.2 MB; it HOLDS a history (blobs/History.db, zstd): ONE session, the reporter's own staged FreeCAD (build hash b076aae675) opened 17:36:03, ONE save at txn 21 (18:06:52); the file was still schema 4 at the revert's read 17:59:07, so ONE save, not several; nothing in the console at 18:06:52; NO code found that saves unasked. 18:18 the 18:06:05 step READ: ONE op, a VIEW property ShowFrames set (a TechDraw page's frames toggled), 47 s before the save; no TechDraw code that saves found. 18:19 the build session (read only): NO save call added in src since 10-13 except tests; its probes open COPIES headless (FreeCADCmd) and none ran at 18:06; the session's "closed" time is written when the log is copied into the saved file, not a close -> the trigger is a SAVE ACTION in the GUI between 18:06:05 and 18:06:52; the question to the reporter: what was done in those 47 s, which window was active, did a box appear. 18:27 the PRE-SAVE content is NOT LOST: byte-identical (md5 bb568db2683b3acc217d534249778cfd, 6119171 bytes) to scanner.20261006-091732.FCBak beside it and to the build session's probe copy of 17:39 -- checked by the note-taker; the build session's 160 probes use the pre-save copy from now on. 18:33 the reporter: does NOT remember hitting any save button or anything, and saw NO format warning box; the note-taker READ: by design (the reporter's own rule of 2026-09-28) the old format is told ONCE, at the open, in the report view; a plain save then writes schema 5 with NO box -- so no box does not rule out a plain save |
-| 168 | 2026-10-16 | a change request FOR DISCUSSION: how to let the user know the RISK of saving in the NEW format, and yet ENCOURAGE it for the transaction log; eventually a NEW EXTENSION for the new format -- "one of the branch already did that" | OPEN, a discussion; the branch is `origin/Branding` (5 commits beyond LinkVibe, 10-14, not merged): schema 5 = .TStd; a plain save of an opened .FCStd writes Part.TStd BESIDE it and leaves the .FCStd as it was, with one dialog -- by the note-taker's reading it would have spared entry 167's overwrite; the note-taker's proposal under the entry |
+| 168 | 2026-10-16 | a change request FOR DISCUSSION: how to let the user know the RISK of saving in the NEW format, and yet ENCOURAGE it for the transaction log; eventually a NEW EXTENSION for the new format -- "one of the branch already did that" | OPEN, a discussion; the branch is `origin/Branding` (5 commits beyond LinkVibe, 10-14, not merged): schema 5 = .TStd; a plain save of an opened .FCStd writes Part.TStd BESIDE it and leaves the .FCStd as it was, with one dialog -- by the note-taker's reading it would have spared entry 167's overwrite; the note-taker's proposal under the entry. 19:00 RULED: WAIT for the other box to merge Branding first; then, on a SAVE of a file with the OLD extension, a DIALOG that ASKS -- all the facts, ENCOURAGING the new format, ASSURING the old file stays and they can save back to the old format; a "don't ask again"; when it is clicked, a dialog telling them Save As saves the new format |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -22588,6 +22593,40 @@ the bar, the box or both; c. what the new format must NOT lose for a
 user who shares .FCStd files (a both-files mode, an export); d. whether
 the history (transaction log) can run on a standard-format document at
 all, or only on .TStd -- the "encourage" depends on it.
+
+**2026-10-16 19:00, the reporter RULES:** "First wait for other box to merge
+branding first. Once we get the saving in other extension code. When
+saving a file old extension, pop dialog to ask. List all the facts and
+encourage them to save new format. Assure them old file will stay and
+they can save back to old format. Offer don't ask again. If they click
+don't ask, pop dialog to let them know they can use save as to save new
+format."
+The note-taker's reading:
+- ORDER: nothing on this until the "other box" (another machine or
+  session) has merged `origin/Branding` (the .TStd extension and the
+  save beside the .FCStd) -- this session's build does not start it.
+- Then: a SAVE of a document whose file has the OLD extension (.FCStd)
+  ASKS, in a dialog, every time until told otherwise -- not the branch's
+  after-the-fact "Saved as Part.TStd" notice.
+- The dialog LISTS THE FACTS and ENCOURAGES the new format: what it
+  gains (the transaction log), what it costs (other FreeCAD versions do
+  not open it), and ASSURES that the old .FCStd STAYS as it is and that
+  they can save back to the old format.
+- It offers "DON'T ASK AGAIN". When that is clicked, a SECOND dialog
+  says they can still use Save As to save in the new format.
+- Of the note-taker's six points (18:43): 1 (non-destructive, the
+  branch) and 4 (a box with "don't show again") taken, as a box AT EACH
+  SAVE until silenced; 2 (a bar at the open) and 6 (a preference) not
+  taken by this ruling; 3 and 5 folded into the dialog's facts.
+NOT said: a. "If they click don't ask" -- the second dialog after
+"don't ask again" with EITHER answer, or only with "keep the old
+format" (by the note-taker's reading: whenever it is ticked, since the
+point is where to find the new format later); b. what a silenced save
+does -- keep writing the old format (schema 4) over the .FCStd, or the
+new one beside it; c. "don't ask again" per document, or for all
+documents (a preference); d. the dialog's buttons -- by the
+note-taker's reading "Save in the new format (recommended)" / "Keep the
+old format" / Cancel.
 
 ## Inbox
 
