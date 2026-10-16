@@ -7543,3 +7543,39 @@ before the 18:06 save (entry 167; identical to the 10-06 .FCBak).
   nothing past the console's start codes, and the reporter asked about the
   dialog at about 15:55. Test exes run through ctest from now on. If the
   dialog comes again with nothing of mine running, its text is wanted.
+
+### 2026-10-17 night: entries 166 and 160 fixed
+
+- 166 (included files missing after a revert): `9b2db5555f`. Cause: a
+  binder's temporary copy calls copyObject in its temporary document, which
+  exports the scanner's objects from there. Only the temporary document's
+  blob manager was told of that export (schema 4, no shared entries); the
+  objects' properties answer to the scanner's own manager, which still had
+  the "entries" format of its last save. So Sketch018.Shape/InternalShape
+  and Pad012.AddSubShape/SuppressedShape went out as a hash the fragment
+  did not carry (r99 trace: "schema 4 exporting 1 uses 1"). General, not
+  the binder's: every copyObject from a document last saved at schema 5.
+  In the STAGED copy (54b5805b13) nothing rescued them -- the open-document
+  fallback is 294697011c, local -- so such a copy lost those files: a shape
+  until the next recompute, an included file (texture, material) for good.
+  Whether a saved user file carries such a loss is NOT checked. Fix:
+  exportObjects begins the save on every exported object's own document
+  manager too (and clears that document's hasher list). The fallback stays
+  and warns, naming the file, the source document and the property (the
+  reporter's "keep as safe net, but print warning").
+- 160 (normal edge: base edge plus fillet face outline): `dc5ef18848`. The
+  edit view's face highlight had never drawn: the preview is unpickable in
+  the edit and the highlight builder skips unpickable shapes (r100 trace:
+  "match 1 unpick 1 out 0"). The earlier 14/14 (a25c1d068b) measured the
+  preselection, which then was the face; with the base edge preselected
+  the same claim measures the edit highlight alone. New SoFCRenderCache
+  flag AnySelectStyle for the editing highlight. Normal edge: base edge
+  preselected in the usual colour, fillet face outlined; missing edge: its
+  kept face preselected; a second view outside the edit lights nothing.
+- r102: fillet-hover-outlines-face.py 15 of 15 on the real screen;
+  FileBlobs 96 OK (2 skipped, as before) with the new
+  testCopyFromASavedDocumentCarriesItsContent; Document 236 OK; the
+  scanner copy's first recompute warns of no missing file (r99: eight).
+  r98 and r101 never built: their configure hung on a try-compile ninja
+  stuck in the kernel (killed; r102 ran "cmake --build" only). NOT pushed,
+  NOT staged.
