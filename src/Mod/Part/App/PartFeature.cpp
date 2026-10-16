@@ -390,17 +390,55 @@ App::DocumentObjectExecReturn *Feature::recompute()
     // retry of an extrusion -- and the shape that gave is not the one the
     // feature makes of inputs it may change: a pad up to a shape came out
     // four times its volume, and no error said so.
-    const unsigned int refused = TopoDS_LockedShape::Raised();
-    App::DocumentObjectExecReturn* ret = once();
-    if (ThawInputs::active() || TopoDS_LockedShape::Raised() == refused)
-        return ret;
-    FC_LOG(getFullName() << ": a frozen input was refused ("
-                         << (ret == App::DocumentObject::StdReturn ? "worked around" : ret->Why.c_str())
-                         << "), recomputing on copies");
-    if (ret != App::DocumentObject::StdReturn)
-        delete ret;
-    ThawInputs thaw;
-    return once();
+    //
+    // The references into this feature follow the shape that stays, not the
+    // first run's: re-resolved against a shape about to be thrown away, an
+    // element only that one lacks is marked missing, and a reference marked
+    // missing is never searched again -- a fillet lost two edges of a chamfer
+    // that the second run made (docs/HandsOnQueue.md entry 160). Held over
+    // both runs, re-resolved once at the end.
+    const bool holding = !_holdingReferences;
+    if (holding) {
+        _holdingReferences = true;
+        _heldShapeChange = false;
+    }
+    App::DocumentObjectExecReturn* ret = nullptr;
+    try {
+        const unsigned int refused = TopoDS_LockedShape::Raised();
+        ret = once();
+        if (!ThawInputs::active() && TopoDS_LockedShape::Raised() != refused) {
+            FC_LOG(getFullName() << ": a frozen input was refused ("
+                                 << (ret == App::DocumentObject::StdReturn ? "worked around" : ret->Why.c_str())
+                                 << "), recomputing on copies");
+            if (ret != App::DocumentObject::StdReturn)
+                delete ret;
+            ret = nullptr;
+            ThawInputs thaw;
+            ret = once();
+        }
+    }
+    catch (...) {
+        if (holding)
+            releaseHeldReferences();
+        throw;
+    }
+    if (holding)
+        releaseHeldReferences();
+    return ret;
+}
+
+void Feature::releaseHeldReferences()
+{
+    const bool changed = _heldShapeChange;
+    _holdingReferences = false;
+    _heldShapeChange = false;
+    // As onChanged() does it for a shape set outside recompute()
+    if (changed && getDocument()
+            && !getDocument()->testStatus(App::Document::Restoring)
+            && !getDocument()->isPerformingTransaction()) {
+        updateElementReference();
+        reconcileShapeVersions(/*materialize*/true);
+    }
 }
 
 App::DocumentObjectExecReturn *Feature::execute()
@@ -1616,8 +1654,16 @@ void Feature::onBeforeChange(const App::Property *prop) {
                 ++it;
             }
         }
+        // Not a shape set while the references are held (recompute()): none
+        // was resolved against it, and retained it would take them over
+        // from the one they were -- found there by position, a first run's
+        // thrown-away shape named other edges (Fillet007 in scanner.FCStd,
+        // docs/HandsOnQueue.md entry 160).
+        const bool unresolved = _holdingReferences && _heldShapeChange
+            && prop == getPropertyOfGeometry();
         if(getDocument() && !getDocument()->testStatus(App::Document::Restoring)
-                         && !getDocument()->isPerformingTransaction())
+                         && !getDocument()->isPerformingTransaction()
+                         && !unresolved)
         {
             // Retain the outgoing shape whole, as a new generation, and
             // record the referrers whose reference into it is healthy now.
@@ -1975,11 +2021,20 @@ void Feature::onChanged(const App::Property* prop)
         }
     }
 
-    GeoFeature::onChanged(prop);
+    if (_holdingReferences && prop == getPropertyOfGeometry()) {
+        // GeoFeature::onChanged() would re-resolve every reference into this
+        // feature, which recompute() does once it knows which run's shape
+        // stays (releaseHeldReferences())
+        _heldShapeChange = true;
+        App::DocumentObject::onChanged(prop);
+    }
+    else
+        GeoFeature::onChanged(prop);
 
     // GeoFeature::onChanged(Shape) has just re-resolved every reference
     // into this feature; the generations can now be kept or let go.
     if (prop == &this->Shape
+            && !_holdingReferences
             && getDocument()
             && !getDocument()->testStatus(App::Document::Restoring)
             && !getDocument()->isPerformingTransaction())
