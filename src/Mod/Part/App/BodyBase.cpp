@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <set>
+
 #include <App/Document.h>
 
 #include "BodyBase.h"
@@ -51,10 +53,16 @@ BodyBase* BodyBase::findBodyOf(const App::DocumentObject* f)
     if(prop && prop->getValue() && prop->getValue()->isDerivedFrom(BodyBase::getClassTypeId()))
         return static_cast<BodyBase*>(prop->getValue());
 
+    // Up the groups that own it. They may go round -- two parts each in the
+    // other is taken, not refused (Document.py, testGroupAndGeoFeatureGroup,
+    // issue 0002567) -- so the walk ends where it has been: no body.
+    std::set<const App::DocumentObject*> seen {f};
     for(;;) {
         auto group = App::GeoFeatureGroupExtension::getGroupOfObject(f);
         if(!group || group->isDerivedFrom(BodyBase::getClassTypeId()))
             return static_cast<BodyBase*>(group);
+        if(!seen.insert(group).second)
+            return nullptr;
         f = group;
     }
 }

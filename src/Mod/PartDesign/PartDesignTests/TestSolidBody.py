@@ -1242,3 +1242,21 @@ class TestSolidBody(unittest.TestCase):
         self.Doc.removeObject(self.Body.Name)
         self.assertEqual([o.Name for o in self.Doc.Objects
                           if o.isDerivedFrom("PartDesign::SolidBody")], [])
+
+    def testGroupsThatGoRoundAreNoBody(self):
+        # A link set on an object outside any body asks which body it is in,
+        # up the groups that own it -- once a solid body exists, which is
+        # when that is watched. Two parts each in the other are taken, not
+        # refused (issue 0002567), and the walk went round them for ever:
+        # Document.py's testGroupAndGeoFeatureGroup hung in a full run.
+        self.twoSolids()
+        part1 = self.Doc.addObject("App::Part", "RingPart1")
+        part2 = self.Doc.addObject("App::Part", "RingPart2")
+        part1.addObject(part2)
+        part2.Group = part2.Group + [part1]
+        loose = self.Doc.addObject("App::FeatureTest", "Loose")
+        part2.addObject(loose)
+        target = self.Doc.addObject("App::FeatureTest", "Target")
+        loose.LinkList = [target]
+        self.assertEqual(loose.LinkList, [target])
+        self.assertEqual(len(self.solidBodies()), 2)
