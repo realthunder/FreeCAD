@@ -168,6 +168,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 10:23: entry 138 -- the reporter: STILL no background on the
+selection view's column header ("regression"); 10:24 ADDED: a background
+for the 'Picked object list' checkbox too.** Under the entry; the cause
+not known by reading.
+
 **2026-10-16 10:22: entry 157 -- the timer's sync must not scroll the tree; the
 note-taker elaborates the edit exception (tree -> the editing view only
 when it is ACTIVE; otherwise every view except those in an edit) and asks
@@ -3130,7 +3135,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 135 | 2026-10-15 | the fillet's ON-VIEW EDITING (entry 117, on the copy staged 08:21): (1) a fillet with a MISSING REFERENCE shows NO ARROW -- so before entry 117's work too; with every missing reference removed the arrows show; (2) a click on an arrow is taken on the press, but its RELEASE PASSES THROUGH and selects the face behind; (3) the root button's click shows NO MENU, the reporter's guess: the same pass-through; (4) a change asked: the root button at the MIDDLE OF ITS EDGE, with a HIGHLIGHT of its own that shows it can be pressed | OPEN; read by the note-taker, nothing run: the root button sits just behind the arrow's root, in the arrow's frame, not on the edge; points under the entry. THE BUILD SESSION's reading (09:49), nothing run: point 1 -- the fillet panel hides ALL its handles while the fillet is in error, and a missing reference puts it in error; 2 and 3 need a reproduction by mouse (its tests drove the handles by keyboard); 4 confirmed. Its order: after 117's step 4, as the chamfer shares the handles. CHANGED BY THE REPORTER 11:30: the ROOT BUTTON (the pressable item at the arrow's tail) is DROPPED -- point 4 (button at the edge's middle with its own highlight) falls away; instead a TOOLTIP on hovering an arrow hints that a RIGHT CLICK opens its context menu (the menu the button opened). ANSWERED 11:35: the tooltip ALSO names drag to change and click to type; NO right click on the value label. "THE REST AGREE" 11:35: the chamfer's handles change the same way, Space still opens the menu, and arrows show on the edges that still exist while a reference is missing (the note-taker's readings, now the reporter's). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): root button gone; right click on any handle opens its menu; hover tooltip; arrows show on the edges still there; point 2 REPRODUCED by mouse and fixed (a button-1 press picked through an SoDragger keeps its release from the selection). DONE 14:22, COMMITTED `14201accd6` (point 2), `50bed5f8ab` (the change: right click, tooltip), `bd51427d8e` (point 1), LOCAL, not pushed, not staged; tested on r54. PUSHED 2026-10-15 14:45 (origin `1df007d0f2`) and STAGED 14:47 CLEAN (`1df007d0f2`) |
 | 136 | 2026-10-15 | a change request, "related" to 135: EACH OPERATION in the fillet's edit UNDOABLE by itself -- and, in general, fine-grained undo in ALL PartDesign edit tasks; CANCEL still restores the state before the edit | OPEN; read by the note-taker, nothing run: an edit is ONE undo step today ("Edit <name>", opened at the first change and kept); the dress-ups' Cancel already undoes back to the edit's first step by its id, the others abort the open one. WAITS FOR THE REPORTER'S ANSWERS to points a to d (the build session, 09:49). ANSWERED 09:58: a, a drag's release is ONE step if it changed something; b, OK a step of its own (it triggers the recompute); c, REDO wanted; d, THE FILLET FIRST. And a NEW point: while dragging, a click of any other mouse button, or Esc, CANCELS the drag and restores the state before it. Typing as a step not said. TYPING ANSWERED 10:07: a typed value is a step when the editing FINISHES; ENTER commits the value and triggers the fillet's partial recompute but KEEPS the edit box open (not a finish); Esc, Tab or a click away FINISH and close the box -- a CHANGE to step 1's keys (Enter closed the label, Esc restored the value). Points f to i taken by the build session as the note-taker's readings (Esc keeps, Tab finishes and moves to the next handle, Ctrl+Enter kept, un-Entered text committed on a click away) unless the reporter says otherwise. ITS ORDER: 135, then 137, then 136 on the fillet. POINTS f TO i ANSWERED 10:13: ESC without Enter does NOT commit what was typed -- it closes the box and the open transaction, a step only if the value changed since the box opened (the note-taker's reading of f, "Esc keeps", WRONG); TAB commits, closes and moves to the next handle; a CLICK AWAY commits and closes; NO Ctrl+Enter. THE REPORTER 11:57: "once all done, including entry 136, push and restage" -- a PUSH and a RESTAGE are authorised once 135, 137 and 136 are done. DONE 14:22 for the FILLET, COMMITTED `50bed5f8ab` (drags as undo steps, the label keys), `bd51427d8e` (the fillet's fine undo), LOCAL, not pushed, not staged; tested on r54. The PUSH AND RESTAGE: the build session asks the reporter to CONFIRM directly before it pushes (the word came only by relay). PUSHED 2026-10-15 14:45 (origin `1df007d0f2`) and STAGED 14:47 CLEAN (`1df007d0f2`), on the reporter's DIRECT confirmation to the build session 14:25 |
 | 137 | 2026-10-15 | a change request: TechDraw's "Print All Pages" and "Print Selected Pages" COMBINED into ONE command, TechDraw_Print; its tooltip to say it prints the SELECTED pages, or ALL pages when none is selected | OPEN; read by the note-taker, nothing run: two commands today, TechDraw_PrintAll (upstream's name; the active document's pages) and TechDraw_PrintSelected (entry 127; selected pages of any document); both on three tool bar/menu lists of the workbench; points under the entry. the build session's order: after 135, before 136. CHANGED BY THE REPORTER 10:20: the print-all command DROPPED; the one print command gets a PRINTER icon and opens a DIALOG to pick the pages -- a tree of every open document and its pages, checkboxes on both (a document's box toggles all its pages), the current document expanded and scrolled to its first page, all its pages checked by default; the last choice remembered for the session only (not saved). The "selected, or all if none" rule of 10:03 REPLACED. ANSWERED 11:27: EXPORT TO PDF wanted in the dialog; a SEPARATE LIST BOX at the side lists every checked page as doc_name#page_name, with move up / move down to set the ORDER; menu text "Print pages", the tooltip to mention printing selected pages and export to PDF. ALL POINTS ANSWERED 11:33: a BUTTON for PDF export; the PRINT button goes on to the printer dialog, landscape by default; doc_name and page_name are both LABELS; reorder by move up/down BUTTONS AND by DRAG; the rest as the note-taker read it (part-checked document box, remembered order kept with newly checked pages at the end, closed documents dropped, documents with no pages left out). BUILT in r49, tests running, NOTHING COMMITTED yet (the build session, 11:42): TechDraw_Print "Print pages" with the page dialog; Print All and Print Selected REMOVED; the remembered choice kept only on Print/Export, not on Cancel (the build session's choice). DONE 14:22, COMMITTED `58242c9b8c`, LOCAL, not pushed, not staged; tested on r54 (print 12). PUSHED 2026-10-15 14:45 (origin `1df007d0f2`) and STAGED 14:47 CLEAN (`1df007d0f2`) |
-| 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header. NOT REPRODUCED 14:22 by the build session: offscreen the selection view's header and the property editor's read the SAME ground; it asks the reporter for a SCREENSHOT and the panel layout |
+| 138 | 2026-10-15 | a defect: in an overlay in TRANSPARENT mode the SELECTION VIEW's COLUMN HEADER has no background (all transparent); the reporter remembers asking for it to be backed as the PROPERTY EDITOR's column header is | OPEN; the earlier request NOT FOUND in the queue by the note-taker -- the nearest is entry 123 (the selection view's list column backed as the property editor's, 2026-10-14 15:49), which does not name the header. NOT REPRODUCED 14:22 by the build session: offscreen the selection view's header and the property editor's read the SAME ground; it asks the reporter for a SCREENSHOT and the panel layout. 2026-10-16 10:23: the reporter -- "regression", the header STILL has no background (no screenshot given); 10:24 ADDED: a background for the 'Picked object list' CHECKBOX too |
 | 139 | 2026-10-15 | a change request: the PYTHON CONSOLE's and the REPORT VIEW's TEXT COLOURS revised to stand out more on the overlay background, in BOTH themes -- Classic included ("basically light theme") | OPEN. ALL POINTS ANSWERED 13:26: an AUDIT of ALL the two panels' text colours; in an overlay the SAME for EVERY overlay mode; the docked (non-overlay) panels MAY use the same colours if that is simpler; the rest as the note-taker read it (user-set colours kept, the text ground and outline unchanged). Queued by the build session after 140. DONE by the build log (seen 16:57): `340d03f023`, LOCAL, not pushed, not staged -- every colour of Dark, Light and Classic measured, those under 4.5:1 revised; test overlay-text-colours 6; r59 |
 | 140 | 2026-10-15 | a change request: in an overlay in NON-TRANSPARENT mode, the SELECTION VIEW's background the SAME as the other panels' (the Python console's, the report view's) | OPEN. CAUSE READ by the build session 14:22: in a non-transparent overlay the selection lists take the overlay sheet's tree grey, the text views keep the theme's ground (entry 121); plan: the report view's ground for the lists while overlaid and not see-through; NOT STARTED. DONE by the build log (seen 16:57): `e9a5143778` (+ `ba8fab9ccc`), LOCAL, not pushed, not staged -- the selection view's list on the report view's text ground; the log's text says "transparent mode", the commit "not see-through" -- which mode, ASKED of the build session. ANSWERED 16:59 by the build session: the NON-transparent mode (eye off), the log's "transparent" a slip, corrected `5dbfe4ae1d`; the transparent mode as it was |
 | 141 | 2026-10-15 | a defect: the fillet's on-view ARROW TOOLTIP (entry 135, staged 14:47) shows AT ONCE when the pointer touches the arrow, and ANY further movement hides it, even over the arrow; wanted: a TIMER, and the pointer checked to be still over the arrow before it shows; movement over the arrow does not hide it | OPEN. ADDED 15:32: the CHAMFER's handles the same (the reporter: "the same rule shall apply to chamfer except the direction which should be perpendicular to the chamfer face"). CAUSE FOUND and FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): the face BEHIND the handle stayed preselected and every move re-told the selection, which hides every tool tip; with an object in edit nothing behind a handle is preselected (SoFCUnifiedSelection). DONE 21:26 (build session): `cb161d69d3` + `62a8af9234`, LOCAL, not pushed, not staged -- two causes, the preselection behind the arrow and Qt's unanswered tool tip request; test 15 |
@@ -19613,7 +19618,7 @@ session).
 From its message, written here 14:22. "58242c9b8c TD: Print pages (137)." Tested on r54: "print 12";
 suites as under entry 135.
 
-## 138. The selection view in a transparent overlay: its column header has no background; asked to be as the property editor's (a defect) -- OPEN
+## 138. The selection view in a transparent overlay: its column header has no background; asked to be as the property editor's (a defect) -- OPEN; 2026-10-16 10:23 STILL, "regression"; 10:24 ADDED the 'Picked object list' checkbox
 
 **2026-10-15 11:58, the reporter:** "new defect, selection view column header
 still has no background (all transparent) in overlay transparent mode. I
@@ -19655,6 +19660,44 @@ Light (128,128,128) at alpha 50. I'm asking the reporter for a screenshot
 and their panel layout."
 The note-taker's note: measured OFFSCREEN (memory: a claim failing on one
 platform only is the platform's); the reporter's screen not seen.
+
+**2026-10-16 10:23, the reporter:** "regression. why the selection view list
+column header still has no background"
+**2026-10-16 10:24, the reporter, while the note-taker was at it:** "while at
+it. also add some background to the 'Picked object list' checkbox"
+
+The note-taker's reading:
+- The same defect as 138 (the selection view's list COLUMN HEADER with no
+  background in the overlay) -- STILL there on the copy staged 09:01
+  today, by the note-taker's reading. "regression": by the note-taker's
+  reading the reporter means it was asked before (entry 123/138) and is
+  still not right; NO fix of 138 is recorded (not reproduced offscreen
+  2026-10-15 14:22, a screenshot asked, none given).
+- "why": asked of the note-taker -- answered in the reply: the cause is
+  NOT known; see below.
+- ADDED: the selection view's "Picked object list" CHECKBOX (above the
+  pick list) gets SOME BACKGROUND too, by the note-taker's reading so it
+  reads on the see-through overlay.
+NOT said: the mode (transparent or not; 138 was the transparent mode),
+the theme; how much background for the checkbox (as the header's? as the
+property editor's?).
+READ in the source, nothing run:
+- The header rules: `src/Gui/OverlayManager.cpp` 345-349 (built-in sheet:
+  `QHeaderView { background:transparent }`, `::section` rgba(250,250,250,50))
+  and `src/Gui/Stylesheets/overlay/Dark.qss` 59-65 (`::section`
+  rgba(50,50,50,50)) -- EVERY header in the overlay gets the same
+  near-clear section (alpha 50 of 255, about 20%); nothing gives the
+  property editor's header more, by this reading.
+- 140's commit `e9a5143778` (OverlayManager.cpp, a rule
+  `Gui--DockWnd--SelectionView QTreeView { background-color }`) backs the
+  selection view's LISTS in the non-transparent mode; it adds no header
+  rule.
+- The checkbox: `src/Gui/Selection/SelectionView.cpp` 157-159
+  (`enablePickList`, a QCheckBox, "Picked object list"); no overlay rule
+  for it.
+- So why the property editor's header looks backed and the selection
+  view's not: NOT found by reading (perhaps what lies behind each header
+  -- the property editor's own ground -- NOT checked).
 
 ## 139. The Python console's and the report view's text colours, to stand out on the overlay background, in both themes, Classic included (a change request) -- OPEN; ALL POINTS ANSWERED 13:26
 
