@@ -7346,3 +7346,18 @@ lines select the dimension.
 dimension's extension line selects, on a part view and on a projection
 group's view (the group case FAILS with the old shape, on r71), and the
 label still selects the dimension; section-line click 10.
+
+**The user, 2026-10-16: "Dimension line will select dimension".**
+`3a5e7c0239`, in place of the above: a press on a dimension's lines or
+arrows selects it (its label, the way a dimension is selected; Ctrl adds
+or takes away; nothing is dragged), and hovering them lights it. The
+cause on a projection group's view, found on the way: the group filters
+the events of everything under it and, with AutoDistribute, took a press
+on any QGIView below -- a dimension or a balloon on one of its views
+included -- cleared the selection and began a group drag. It now takes
+only its own views'. On the scanner copy no Front010 click selects
+nothing; the ten under a dimension's line select that dimension.
+**Tests (r74):** click-through 11 (extension line over an edge selects
+the dimension, on a part view and a group's view; the dimension line away
+from its label; the label; a group's view dragged 10 mm moves the group
+10.16), section-line click 10.
