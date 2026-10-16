@@ -7319,3 +7319,30 @@ fillet partial 12, chamfer 19, fillet edges 17, undo 17, typed 21, groups
 DrawStoredGeometryTest (GUI module) 5 of 6 -- its silhouette test fails
 the same on the staged `1df007d0f2` (the silhouette is named from
 "Lateral", the test wants "Face1"), not this work's.
+
+## Entry 148 (h): the last ten edges that selected nothing (2026-10-16)
+
+All ten of Front010's edges that still selected nothing are arcs crossed at
+their middle by a dimension's extension line or arrow (39.66 over the two
+top holes; the R1, R2, R1.4, R3.6 and diagonal 24 arrows). A temporary
+trace (removed) showed the dimension item itself take the press and
+nothing be selected, though it is neither movable nor selectable -- only
+its label selects the dimension. On a plain part view the same lines let a
+press through; on a projection group's view, like Front010, they did not.
+Which code accepts the press there I did not find; the fix does not need
+it.
+
+`3370553582`: a dimension now takes a press on its label only; its lines
+and arrows let it through to what lies below, which is what hover already
+lit there. On the copy, with the old shape put back by a temporary switch
+in the same build: 10 selecting nothing before, 0 after. Of Front010's 93,
+32 still do not select themselves: 25 select an end vertex (short arcs),
+7 the edge lying over them (148 f). Rear001: unchanged, the image view
+ActiveView017 over it (148 g). A choice of mine: a click on a dimension's
+line selects nothing and goes through; the other way would be to make the
+lines select the dimension.
+
+**Tests (r72):** TechDraw click-through 9 -- new: an edge under a
+dimension's extension line selects, on a part view and on a projection
+group's view (the group case FAILS with the old shape, on r71), and the
+label still selects the dimension; section-line click 10.
