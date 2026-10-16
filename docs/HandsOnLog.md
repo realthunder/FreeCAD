@@ -7413,3 +7413,51 @@ overlay pass-through 18, TestChamfer 11. Scanner Front010: the same 39 as
 on r74 (23 an end vertex, 6 the edge lying over them, 10 their dimension).
 r79's configure hung an hour in a try-compile and was stopped; r80 is the
 same tree.
+
+## Entries 152, 158, 160, 162 (2026-10-16, the afternoon) -- LOCAL, not pushed, not staged
+
+**152, PartDesign's task watchers.** `0a899727e2`: a watcher can say it
+needs a 3D view (TaskWatcher::setNeeds3DView); the task view shows it only
+while the active view is one (a split view answers with its focused view)
+and looks again at each view activation. PartDesign marks all its own;
+other workbenches and an open dialog are as they were. Test
+partdesign-watchers-need-3d-view.py 6 (r82).
+
+**160, a missing edge's fillet face after a reopen.** `c33e177bcf`: the
+faces a dress-up made for an edge are seeded from the Shape the file had,
+so the first recompute losing the edge still shows its face. TestFillet 24
+(r81), TestChamfer 11 (r80).
+
+**158, the freeze at the first page switch,** measured on the real screen
+(the reporter's word): Page009 opened by double-click 45 s after the
+open -- no stall over 0.1 s; 8 s after -- 5.5 to 5.9 s of stalls, longest
+1.5 to 1.9 s, the backend layer or Qt alike; the control, 8 s and no page
+opened -- 3.4 to 3.6 s of stalls, the load still finishing. The page adds
+about 2 s when opened before the load ends; the rest is the load. Not
+fixed.
+
+**162, "invalid name length" at the scanner's GUI open.** Two faults.
+- `15289190d8` (App): the GUI hashes strings into a new document's table,
+  shared with the file's history, before the file is read (99 on the
+  scanner). Document::Restore finds the file's table disagreeing and takes
+  it ("kept apart", d522d3064a of 09-27) -- but left index 0, which every
+  shape names its table by, on the table set aside. Every shape's element
+  map was built against the wrong table; its names read back as other
+  features' strings (Pad's first face as a face of a Thickness). Found by
+  temporary traces (r84): headless the table is empty, no merge, no
+  switch. Now the taken table is index 0. On the scanner: 0 warnings (21),
+  Pad's table the document's. Visible: twenty objects (Pad039, Helix002,
+  Pocket022 ...) draw their faces in their sources' colours again, where
+  they drew one colour -- to be looked at by the reporter.
+- `1bcd48431b` (Part/Gui): the pass that makes an older file's looks again
+  after the read (39c692c6c5) never ran in the GUI (0 of 264) -- the view
+  providers come after the App's signal. It now waits for the load.
+- Tests (r86): shape-string-table-after-gui-open.py 3 (a file written by a
+  headless FreeCADCmd; its first claim proves the case from the log),
+  binder-map-color-restore.py 4, Document.py 236, Part appearance 35.
+- The staged copy could not run the test: its FreeCAD.exe is gone since
+  13:13, the time of the Apex alarm (entry 161).
+- Not 160's cause: the scanner copy opened and recomputed (r86) gives the
+  same in the GUI and headless (where the table was never wrong) --
+  Fillet011 "Adaptor" misses ?Edge93 and ?Edge89, Fillet007 "BaseBottom"
+  ?Edge177 and ?Edge171; Binder008, Fillet007 and Fillet011 invalid.
