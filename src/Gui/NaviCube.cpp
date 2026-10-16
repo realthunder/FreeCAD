@@ -583,6 +583,19 @@ void NaviCubeShared::getParams()
 {
     for (auto &info : m_colors)
         info.color = QColor::fromRgba(m_hGrp->GetUnsigned(info.name, info.def.rgba()));
+    // The axis labels are drawn on the 3D view's background, which the
+    // theme sets (docs/HandsOnQueue.md entry 156, the reporter 2026-10-16:
+    // "from each theme. by hand wins. only axis label"): a theme states its
+    // colour as ThemeAxisLabelColor, which a theme switch rewrites; a colour
+    // set by hand is AxisLabelColor itself and is taken first.
+    bool own = false;
+    for (const auto &kv : m_hGrp->GetUnsignedMap("AxisLabelColor")) {
+        own = own || kv.first == "AxisLabelColor";
+    }
+    if (!own) {
+        m_AxisLabelColor = QColor::fromRgba(
+            m_hGrp->GetUnsigned("ThemeAxisLabelColor", m_AxisLabelColor.rgba()));
+    }
     m_CubeWidgetSize = NaviCubeParams::getCubeSize();
     m_RotateToNearest = NaviCubeParams::getNaviRotateToNearest();
     m_StepByTurn = NaviCubeParams::getNaviStepByTurn();
