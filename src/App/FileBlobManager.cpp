@@ -60,6 +60,8 @@
 #include <Base/FileInfo.h>
 #include <Base/Uuid.h>
 
+#include "Application.h"
+#include "Document.h"
 #include "FileBlobManager.h"
 #include "FileHistory.h"
 #include "Document.h"
@@ -2156,6 +2158,40 @@ void FileBlobManager::removePendingReferrer(BlobReferrerProperty* prop)
                    _pending.end());
 }
 
+namespace
+{
+/** The content of \a hash as another open document's store holds it,
+ * imported into \a manager's (blobs do not migrate, their content does).
+ *
+ * An object copied from one open document into another names what its
+ * source holds: a binder's copy on change in a document of its own, whose
+ * stream carries no file a library material card reads -- each copy of
+ * scanner.FCStd said four of them were missing (docs/HandsOnQueue.md entry
+ * 166).
+ */
+FileBlobHandle fromOpenDocuments(FileBlobManager& manager, const std::string& hash)
+{
+    for (auto doc : GetApplication().getDocuments()) {
+        auto& other = doc->getFileBlobManager();
+        if (&other == &manager) {
+            continue;
+        }
+        if (auto blob = other.find(hash)) {
+            std::string bytes;
+            if (!blob->read(bytes)) {
+                continue;
+            }
+            const std::string ext = blob->extension();
+            auto mine = manager.adoptBytes(bytes, ext.c_str());
+            if (mine && mine->hash() == hash) {
+                return mine;
+            }
+        }
+    }
+    return {};
+}
+}  // namespace
+
 void FileBlobManager::dispatchPending()
 {
     std::vector<std::pair<std::string, BlobReferrerProperty*>> pending;
@@ -2175,7 +2211,11 @@ void FileBlobManager::dispatchPending()
     // chance to stand in for the content rather than lose the value.
     std::map<std::string, std::pair<std::size_t, std::size_t>> missing;
     for (const auto& entry : pending) {
-        if (auto blob = find(entry.first)) {
+        auto blob = find(entry.first);
+        if (!blob) {
+            blob = fromOpenDocuments(*this, entry.first);
+        }
+        if (blob) {
             entry.second->assignRestoredBlob(blob);
         }
         else {
