@@ -17,7 +17,10 @@ the gap between them is empty. Claims:
     on hover and select nothing): with a diagonal dimension across the
     view, whose rectangle covers it all, a click on an edge away from the
     dimension's lines still selects the edge. A dimension took a press
-    anywhere in its rectangle.
+    anywhere in its rectangle;
+  - entry 148, the last 10 of Front010's: a click on an edge under a
+    dimension's extension line selects the edge (the lines and arrows
+    selected nothing and took the press); its label still selects it.
 """
 import os
 import traceback
@@ -204,6 +207,108 @@ def under_dimension():
             break
     check("entry 148: under a dimension's rectangle a click on an edge selects the edge",
           len(edge) == 1 and edge[0][0] == "View" and edge[0][1]
+          and edge[0][1][0].startswith("Edge"), edge)
+
+
+def extensions(view, prefix):
+    """Two horizontal distances between the view's outer corners on one side,
+    one labelled 25 mm above the view and one 25 mm below: whichever side the
+    corners are on, one of the two runs its extension lines along the whole
+    outer sides. Returns the corners' x on the view, and the y middle."""
+    doc = FreeCAD.getDocument(DOC)
+    points = []
+    i = 0
+    while True:
+        try:
+            p = view.getVertexByIndex(i).Point
+        except Exception:
+            break
+        points.append((p.x, p.y, "Vertex%d" % i))
+        i += 1
+    xmin = min(p[0] for p in points)
+    xmax = max(p[0] for p in points)
+    ymin = min(p[1] for p in points)
+    ymax = max(p[1] for p in points)
+    a = [n for x, y, n in points if abs(x - xmin) < 0.01 and abs(y - ymin) < 0.01][0]
+    b = [n for x, y, n in points if abs(x - xmax) < 0.01 and abs(y - ymin) < 0.01][0]
+    note("INFO %s: corners x %.2f to %.2f, y %.2f to %.2f; dimensions between %s and %s"
+         % (view.Name, xmin, xmax, ymin, ymax, a, b))
+    for name, dy in (("Up", 25.0), ("Down", -25.0)):
+        dim = doc.addObject("TechDraw::DrawViewDimension", prefix + name)
+        dim.Type = "DistanceX"
+        dim.References2D = [(view, a), (view, b)]
+        doc.getObject("Page").addView(dim)
+        dim.X = 0.0
+        dim.Y = dy
+    doc.recompute()
+    return xmin, (ymin + ymax) / 2.0
+
+
+EXT = {}
+
+
+@step(500)
+def extension():
+    doc = FreeCAD.getDocument(DOC)
+    doc.removeObject("Diagonal")
+    EXT["view"] = extensions(doc.getObject("View"), "Extension")
+
+
+@step(3000)
+def under_extension():
+    page_view().grab().save(os.path.join(OUT, "extension.png"))
+    # the left box's left side at its middle: an extension line lies on it
+    x, y = EXT["view"]
+    edge = click_mm(VIEW_X + x, VIEW_Y - y)
+    check("entry 148: a click on an edge under a dimension's extension line selects the edge",
+          len(edge) == 1 and edge[0][0] == "View" and edge[0][1]
+          and edge[0][1][0].startswith("Edge"), edge)
+    label = []
+    for dy in (25.0, 24.5, 25.5, 26.0):
+        label = click_mm(VIEW_X, VIEW_Y + dy)
+        if label:
+            break
+    check("entry 148: a click on the dimension's label selects the dimension",
+          [n for n, _ in label] == ["ExtensionUp"], label)
+
+
+GROUP_X, GROUP_Y = VIEW_X, VIEW_Y - 60.0
+
+
+@step(500)
+def group():
+    """The same on a projection group's Front view, as on scanner.FCStd's
+    Page009, whose dimensions hang off such a view"""
+    doc = FreeCAD.getDocument(DOC)
+    group = doc.addObject("TechDraw::DrawProjGroup", "Group")
+    doc.getObject("Page").addView(group)
+    group.Source = [doc.getObject("Left")]
+    group.ScaleType = "Custom"
+    group.Scale = 1.0
+    group.addProjection("Front")
+    group.X = GROUP_X
+    group.Y = GROUP_Y
+    doc.recompute()
+
+
+@step(3000)
+def group_dimensions():
+    # the view's lines come from a thread: none right after the recompute
+    front = FreeCAD.getDocument(DOC).getObject("Group").Views[0]
+    EXT["group"] = (front.Name, front.X.Value, front.Y.Value) + extensions(front, "Group")
+
+
+@step(3000)
+def under_group_extension():
+    v = page_view()
+    v.centerOn(QtCore.QPointF(GROUP_X * 10.0, -GROUP_Y * 10.0))
+    QtWidgets.QApplication.processEvents()
+    v.grab().save(os.path.join(OUT, "group.png"))
+    name, fx, fy, x, y = EXT["group"]
+    edge = click_mm(GROUP_X + fx + x, GROUP_Y + fy - y)
+    check("entry 148: on a projection group's view, a click on an edge under a"
+          " dimension's extension line selects the edge",
+          len(edge) == 1 and edge[0][0] == name and edge[0][1]
           and edge[0][1][0].startswith("Edge"), edge)
 
 
