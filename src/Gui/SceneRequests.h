@@ -104,7 +104,7 @@ GuiExport qint64 uploadLimit();
 GuiExport bool uploadLimitIsPreference();
 /// Override the limit, in bytes; 0 goes back to the preference.
 GuiExport void setUploadLimit(qint64 bytes);
-/// What no setting raises the limit past: 1 GB, held in memory while its
+/// What no setting raises the limit past: 1 GB, written to disk as its
 /// pieces arrive.
 GuiExport qint64 ceiling();
 /// The most one piece carries, before base64: what the client is told at
@@ -130,17 +130,21 @@ GuiExport void setTotalLimit(qint64 bytes);
 GuiExport QString sanitizedName(const QString& given);
 /// A path in `dir` nothing holds yet for a file named `base`.
 GuiExport QString uniquePath(const QString& dir, const QString& base);
-/** The bytes of an upload request: its base64 `data`, or, when it names
- * an `upload`, what that upload's pieces brought -- all of it, sent on
- * the same connection (`client`), which is then let go. Checked against
+/** The bytes of an upload request's base64 `data`, checked against
  * uploadLimit() before and after decoding. False with `error` the reply
- * to send -- `TooLarge`, `BadRequest`, `UnknownUpload` -- when they cannot
- * be taken.
+ * to send -- `TooLarge`, `BadRequest` -- when they cannot be taken.
  */
-GuiExport bool decode(const QJsonObject& req, QByteArray& bytes, QJsonObject& error,
-                      uint64_t client = 0);
+GuiExport bool decode(const QJsonObject& req, QByteArray& bytes, QJsonObject& error);
+/** What the pieces of the `upload` a request names brought: all of it, sent
+ * on the connection `client` holds it for, checked against uploadLimit()
+ * again. The bytes are in the file at `path` (sec 32.37), which is the
+ * caller's from here -- to move into place or to remove. False with `error`
+ * the reply to send -- `UnknownUpload`, `BadRequest`, `TooLarge`.
+ */
+GuiExport bool takeUpload(const QJsonObject& req, uint64_t client, QString& path, qint64& size,
+                          QJsonObject& error);
 /// The uploads whose pieces are arriving, for a test: how many, and the
-/// bytes they hold together.
+/// bytes come for them together.
 GuiExport int stagedUploads(qint64* bytes = nullptr);
 
 /// Register `requests.send` and the pieces' ops. Idempotent.

@@ -174,8 +174,10 @@ const sendCopy = () => {
     try {
       setSending(`Sending ${file.name}...`);
       const sent = await sendRequestFile(file.name, await file.arrayBuffer(),
-        (done, size) => setSending(
-          `Sending ${file.name}: ${mb(done)} of ${mb(size)} MB`));
+        (done, size, waiting) => setSending(waiting
+          ? `Sending ${file.name}: ${mb(done)} of ${mb(size)} MB, `
+            + 'waiting for the connection...'
+          : `Sending ${file.name}: ${mb(done)} of ${mb(size)} MB`));
       setSending(null);
       window.alert(`Sent ${sent.name}. Whoever is sharing the document `
                    + 'decides whether it is merged.');

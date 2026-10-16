@@ -651,9 +651,30 @@ void Gui::installSceneWidgetOps()
         // uploadLimit, docs/TransactionLog.md sec 30.23): 16 MB unless set,
         // a panel's file being a font, a hatch pattern, a symbol. A larger
         // one comes in pieces and is named by its upload (sec 32.36).
-        QByteArray bytes;
         QJsonObject tooMuch;
-        if (!SceneRequests::decode(req, bytes, tooMuch, client))
+        if (req.contains(QLatin1String("upload"))) {
+            // Its pieces are in a file already (sec 32.37): moved into
+            // place, never read into memory.
+            QString pieces;
+            qint64 size = 0;
+            if (!SceneRequests::takeUpload(req, client, pieces, size, tooMuch))
+                return tooMuch;
+            const QString dir = uploadDir();
+            const QString path = dir.isEmpty() ? QString() : SceneRequests::uniquePath(dir, base);
+            const bool placed = !path.isEmpty()
+                && (QFile::rename(pieces, path) || QFile::copy(pieces, path));
+            QFile::remove(pieces);
+            if (!placed)
+                return sceneControlError(id, "UploadFailed",
+                                         QStringLiteral("the pieces could not be moved"));
+            QJsonObject reply = okReply(id);
+            reply[QLatin1String("path")] = path;
+            reply[QLatin1String("name")] = base;
+            reply[QLatin1String("size")] = double(size);
+            return reply;
+        }
+        QByteArray bytes;
+        if (!SceneRequests::decode(req, bytes, tooMuch))
             return tooMuch;
         const QString dir = uploadDir();
         if (dir.isEmpty())

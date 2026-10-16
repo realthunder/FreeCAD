@@ -156,6 +156,18 @@ window.addEventListener('fc:control', (e: Event) => {
   else p.resolve(d);
 });
 
+// A socket that drops takes its answers with it: an op still waiting is
+// answered on that connection or never, so it is told now rather than at
+// its timeout (sec 32.37) -- a send in pieces waits for the next one.
+window.addEventListener('fc:connection', (e: Event) => {
+  if ((e as CustomEvent).detail) return;
+  for (const [id, p] of [...pending]) {
+    pending.delete(id);
+    clearTimeout(p.timer);
+    p.reject({ code: 'Offline', message: 'scene socket down' });
+  }
+});
+
 /// Send one operation; resolves with the correlated answer. Rejects
 /// immediately with code 'Offline' while the socket is down (no
 /// queueing — the caller shows its offline state), and with 'Timeout'
@@ -1086,7 +1098,7 @@ export interface SentRequest {
 export function sendRequestFile(
   name: string,
   bytes: ArrayBuffer,
-  progress?: (sent: number, size: number) => void,
+  progress?: (sent: number, size: number, waiting?: boolean) => void,
 ): Promise<SentRequest> {
   return sendFile('requests.send', name, bytes, progress, 120000);
 }
@@ -1095,6 +1107,16 @@ export function sendRequestFile(
 /// always was. The host says what a piece of a larger one carries.
 const WHOLE_MOST = 4 * 1024 * 1024;
 
+/// How long a send in pieces waits for a dropped connection to come back
+/// before it gives up: inside the two minutes the host keeps what came.
+const RESUME_WAIT_MS = 90000;
+
+/// Whether a refusal is the connection's and not the host's: what a send
+/// in pieces waits out and takes up again.
+function connectionLost(e: any): boolean {
+  return e?.code === 'Offline' || e?.code === 'Timeout';
+}
+
 /// A file to an op that takes one -- `requests.send`, `widgets.upload` --
 /// whole when it is small, in pieces when it is not (docs/TransactionLog.md
 /// sec 32.36): one message of the socket carries 46 MB once the bytes are
@@ -1102,13 +1124,18 @@ const WHOLE_MOST = 4 * 1024 * 1024;
 /// how far it got. `upload.begin` gives the size first, so a file the
 /// host will not take is refused before a byte goes; the pieces follow in
 /// order; and the op names the upload instead of carrying the bytes.
-/// Rejects with what the host refused it as; an upload left half sent is
-/// cancelled.
+///
+/// A connection that drops in the middle is waited for (sec 32.37): when
+/// it is back, the upload is taken up again with the token the host gave
+/// at the start, and the pieces go on from what the host says it has --
+/// what came before the drop does not travel again. `progress` is told
+/// `waiting` meanwhile. Rejects with what the host refused it as; an
+/// upload left half sent for any other reason is cancelled.
 export async function sendFile(
   op: string,
   name: string,
   bytes: ArrayBuffer,
-  progress?: (sent: number, size: number) => void,
+  progress?: (sent: number, size: number, waiting?: boolean) => void,
   timeoutMs = 10000,
 ): Promise<any> {
   const size = bytes.byteLength;
@@ -1118,16 +1145,51 @@ export async function sendFile(
     return reply;
   }
   const begun = await sendOp('upload.begin', { size, for: op });
-  const upload = begun.upload as number;
+  let upload = begun.upload as number;
+  const resume = begun.resume as string;
   const piece = Math.max(64 * 1024, Math.min((begun.piece as number) || WHOLE_MOST, WHOLE_MOST * 8));
   const view = new Uint8Array(bytes);
-  try {
-    for (let at = 0; at < size; at += piece) {
-      const data = base64Of(view.subarray(at, Math.min(size, at + piece)));
-      await sendOp('upload.piece', { upload, at, data }, 60000);
-      progress?.(Math.min(size, at + piece), size);
+  let at = 0;
+  // Back on a connection, the upload taken up again: where to go on from.
+  const takeUp = async (): Promise<void> => {
+    const until = Date.now() + RESUME_WAIT_MS;
+    for (;;) {
+      progress?.(at, size, true);
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const again = await sendOp('upload.begin', { resume });
+        upload = again.upload as number;
+        at = again.received as number;
+        return;
+      } catch (e) {
+        if (!connectionLost(e) || Date.now() > until) throw e;
+      }
     }
-    return await sendOp(op, { name, upload }, timeoutMs);
+  };
+  try {
+    while (at < size) {
+      const end = Math.min(size, at + piece);
+      try {
+        const reply = await sendOp('upload.piece',
+          { upload, at, data: base64Of(view.subarray(at, end)) }, 60000);
+        at = (reply.received as number) ?? end;
+      } catch (e) {
+        if (!connectionLost(e)) throw e;
+        await takeUp();
+      }
+      progress?.(at, size);
+    }
+    for (;;) {
+      try {
+        return await sendOp(op, { name, upload }, timeoutMs);
+      } catch (e) {
+        // Lost on the way: taken up again, the host says whether it still
+        // holds it all -- when it took it before the drop, it has let the
+        // upload go, and this rejects as unknown.
+        if (!connectionLost(e)) throw e;
+        await takeUp();
+      }
+    }
   } catch (e) {
     // Whatever went wrong, the host need not hold what came: it lets an
     // idle upload go anyway, this only says so sooner.
