@@ -168,6 +168,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 10:13: NEW ENTRY 158 (a defect) -- the first switch to a TechDraw page
+after the open freezes the application; reduce it (the load deferral
+`48b9aaa0ba` moved the cost there, by the note-taker's reading).** Under
+the entry.
+
 **2026-10-16 10:09: NEW ENTRY 157 (a defect, a design to discuss) -- tree
 selection vs per-view selection: a tree click that switches to the 3D view
 leaves the tree showing a selection the view has not; the reporter's
@@ -3137,6 +3142,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too. ANSWERED 09:51: EVERY VIEW; the rule: wherever an area is RENDERED TRANSPARENT, the click goes THROUGH. ANSWERED 09:53: ANYTHING NON-TRANSPARENT registers a click; a HIDDEN FRAME does NOT (reverses entry 149's band along a hidden frame) |
 | 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels |
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed |
+| 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21058,6 +21064,43 @@ e. With `PerViewSelection` off (the default) the views share one
    instance, so (1) only matters for views in an edit -- excluded by (a)
    -- and (2) still fixes the stale tree.
 
+## 158. The first switch to a TechDraw page after the open freezes the application (a defect) -- OPEN
+
+**2026-10-16 10:13, the reporter:** "new defect. there is an obvious application
+frozen when a first switch to a techdraw page after open. I remember there
+is a commit to delay techdraw page processing on load until switch. see if
+you can reduce this latency somehow"
+
+The note-taker's reading:
+- After a document is opened, the FIRST switch to a TechDraw page freezes
+  the application for a noticeable time; later switches do not, by the
+  note-taker's reading.
+- The reporter remembers the commit that moved a page's work from the
+  load to its first show; the cost now lands at that switch. REDUCE it --
+  asked of whoever builds; the note-taker builds nothing, relayed to the
+  build session.
+NOT said:
+a. the document -- scanner.FCStd (ten pages, 229 TechDraw objects), by
+   the note-taker's reading -- and which page;
+b. how long the freeze is;
+c. the renderer -- the reporter's `PageRendererVg` is on (bgfx), by the
+   config (entry 154);
+d. the copy -- the one staged 09:01 today, by the note-taker's reading.
+READ in git and the source, nothing run: `48b9aaa0ba` (2026-10-11, entry
+47) "TD: a page makes its items when something needs them, not at the
+load" -- `QGSPage::populate()` makes all of a page's Qt items (every
+dimension laid out and formatted, every section face hatched) when the
+page is shown, printed or exported; its message: "A page shown for the
+first time after the load takes 0.06 to 0.23 s" -- by the note-taker's
+reading measured without the bgfx page feed, and before 2026-10-15's
+WireJoiner faces (`5edea1ed83`, false for old files) and the picking
+changes. Related by the note-taker's reading: entry 151 (at the first
+load the first page shown selects nothing until a page switch).
+Candidate ways (the note-taker's, NOT asked, NOT checked): measure where
+the time goes first (populate, the page feed, the first paint); make a
+page's items in slices across event loop turns, the visible views first;
+or make them in idle time after the open, before the switch.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -21069,5 +21112,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 157
+the build session, 131 and 132 found by it; entries 134 to 158
 are of 2026-10-15, 134 said to the build session)
