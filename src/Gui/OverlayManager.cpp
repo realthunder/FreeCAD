@@ -44,6 +44,7 @@
 
 #include <QPainterPath>
 #include <QPropertyAnimation>
+#include <QRegularExpression>
 #include <QTextBlock>
 #include <QTextLayout>
 
@@ -164,6 +165,50 @@ public:
         // What the settings state goes in FRONT of the sheet: a sheet that
         // states its own for the same thing comes later and wins.
         activeStyleSheet.prepend(fromSettings());
+        activeStyleSheet = headerAtOverlayAlpha(activeStyleSheet);
+    }
+
+    /** A list's column header in an overlay (docs/HandsOnQueue.md entry
+     * 138, the reporter 2026-10-16: "header background colour follow
+     * stylesheet. alpha follow item background"): the sheet's colour for
+     * QHeaderView::section, at View/DockOverlayAlpha -- the sheets carried
+     * an opacity of their own, 10 of 255 in Dark-Outline.qss, and the
+     * headers of the property and selection views were all but clear. The
+     * selection view's "Picked object list" check box, on nothing of its
+     * own, gets the same ground.
+     */
+    static QString headerAtOverlayAlpha(const QString &sheet) {
+        static const QRegularExpression block(
+            QStringLiteral("QHeaderView::section\\s*\\{[^}]*\\}"));
+        static const QRegularExpression ground(QStringLiteral(
+            "(background(?:-color)?\\s*:\\s*)rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,"
+            "\\s*(\\d+)\\s*(?:,\\s*[\\d.]+\\s*)?\\)"));
+        const int alpha = OverlayManager::overlayAlpha();
+        QString out;
+        QString colour;
+        qsizetype last = 0;
+        auto blocks = block.globalMatch(sheet);
+        while (blocks.hasNext()) {
+            const auto found = blocks.next();
+            out += sheet.mid(last, found.capturedStart() - last);
+            QString rule = found.captured(0);
+            const auto first = ground.match(rule);
+            if (first.hasMatch() && colour.isEmpty()) {
+                colour = QStringLiteral("rgba(%1,%2,%3,%4)")
+                             .arg(first.captured(2), first.captured(3), first.captured(4))
+                             .arg(alpha);
+            }
+            rule.replace(ground, QStringLiteral("\\1rgba(\\2,\\3,\\4,%1)").arg(alpha));
+            out += rule;
+            last = found.capturedEnd();
+        }
+        out += sheet.mid(last);
+        if (!colour.isEmpty()) {
+            out += QStringLiteral("\nQCheckBox#SelectionViewPickList {"
+                                  " background-color: %1; padding: 1px 4px; }\n")
+                       .arg(colour);
+        }
+        return out;
     }
 
     /** The rules the settings make (docs/HandsOnQueue.md entry 69): a task

@@ -11,6 +11,9 @@ rendered by itself onto a clear image and its commonest colour read, the
 section's ground. Claims:
   - the property editor's header has a ground (not clear);
   - the selection view's header has the same ground;
+  - 2026-10-16, "header background colour follow stylesheet. alpha follow
+    item background": the ground's opacity is View/DockOverlayAlpha; the
+    "Picked object list" check box has the same ground;
   - the same under the Light theme.
 
 Runs with QT_QPA_PLATFORM=offscreen; the pointer is not moved.
@@ -160,6 +163,35 @@ def measure(theme):
     check("%s: the property editor's header has a ground" % theme, got_props[3] > 0, got_props)
     check("%s: the selection view's header has the same ground" % theme,
           got_sel == got_props, (got_sel, got_props))
+    # entry 138, 2026-10-16: "header background colour follow stylesheet.
+    # alpha follow item background"
+    want = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").GetInt(
+        "DockOverlayAlpha", 180)
+    check("%s: entry 138: the headers' ground is at the items' opacity" % theme,
+          got_props[3] == want and got_sel[3] == want, (got_props, got_sel, want))
+    box = None
+    for w in QtWidgets.QApplication.allWidgets():
+        try:
+            if isinstance(w, QtWidgets.QCheckBox) and w.objectName() == "SelectionViewPickList":
+                box = w
+                break
+        except RuntimeError:
+            pass
+    if check("%s: entry 138: the selection view's pick list check box is there" % theme,
+             box is not None):
+        img = QtGui.QImage(box.size(), QtGui.QImage.Format_ARGB32)
+        img.fill(QtCore.Qt.transparent)
+        box.render(img)
+        img.save(os.path.join(OUT, theme + "-pick-checkbox.png"))
+        seen = {}
+        for y in range(1, max(2, img.height() - 1)):
+            for x in range(1, img.width() - 1):
+                v = img.pixel(x, y)
+                seen[v] = seen.get(v, 0) + 1
+        v = max(seen, key=seen.get) if seen else 0
+        ground = ((v >> 16) & 255, (v >> 8) & 255, v & 255, (v >> 24) & 255)
+        check("%s: entry 138: the check box has the header's ground" % theme,
+              ground == got_props, (ground, got_props))
 
 
 def run():

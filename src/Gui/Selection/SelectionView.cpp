@@ -155,6 +155,8 @@ SelectionView::SelectionView(Gui::Document* pcDocument, QWidget *parent)
     vLayout->addWidget( selectionView );
 
     enablePickList = new QCheckBox(this);
+    // an overlay's sheet gives it a ground (OverlayManager, entry 138)
+    enablePickList->setObjectName(QStringLiteral("SelectionViewPickList"));
     enablePickList->setText(tr("Picked object list"));
     hLayout->addWidget(enablePickList);
 
