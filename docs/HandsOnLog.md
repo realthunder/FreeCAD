@@ -7495,3 +7495,23 @@ before the 18:06 save (entry 167; identical to the 10-06 .FCBak).
   fillet-hover-outlines-face.py 14 of 14. TestFillet 24, TestChamfer 11,
   TestTopologicalNamingProblem 67, TestPad 16, TestPocket 11, Part
   ElementAppearanceTest 35, all OK. NOT pushed, NOT staged.
+
+## 2026-10-16 night: entries 166 and 164 (r93, r94)
+
+- 166 ("some included file not found", on recompute after a revert; the
+  same on a fresh headless open): two binders (Binder, Binder012) copy
+  objects into temporary documents on change; the copies name a library
+  material card's MaterialX files, which the copy stream does not carry.
+  `294697011c`: a file missing at the end of a copy is imported from
+  another open document's store. Scanner copy: 0 warnings (was 8).
+- 164 (the object's name in execute errors, and an audit): `a8a0a01d88`.
+  The central recompute catch puts doc#obj in front of a thrown error;
+  Base::ConsoleContext names the recomputing object (" [doc#obj]") in every
+  warning and error sent while it recomputes, unless already named -- the
+  audit (an agent, read only) had found ~45 unnamed sites plus helpers
+  with no object in scope. The binder's after-context update names itself.
+  Probe: a Python feature's warning and error in execute end in
+  "[E164Doc#Warner]"; its message and a warning outside are untouched.
+- r94: Document 236, FileBlobs 95, TestFillet 24, TestSketcherApp 146 OK.
+  NOT pushed, NOT staged. The separator '@' the reporter typed was not
+  used (FreeCAD's full name is doc#obj); theirs to rule.
