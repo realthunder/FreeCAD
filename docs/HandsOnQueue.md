@@ -168,6 +168,9 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 09:50: entry 154 ANSWERED -- the 09:01 stage, a view in a
+projection group, before not sure.** Under the entry.
+
 **2026-10-16 09:49: NEW ENTRY 155 (a defect) -- TechDraw, an Active View still
 takes clicks over the views below although its background is
 transparent (by the note-taker's reading, the answer to 148 (g)).** Under
@@ -3105,7 +3108,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 151 | 2026-10-16 | a defect: opening `scanner.FCStd` NOW, NONE of the TechDraw EDGES or FACES can be selected; DIMENSIONS can (by line or label); rendered under QT, NONE of the faces or edges are even DRAWN | OPEN; by the note-taker's reading on the copy staged 09:01 (`78fdeb4689`), a regression of the TechDraw picking work (entries 148, 149). ANSWERED 09:44: only on FIRST LOADING the document -- after switching to another page it works, and Page009 works too after switching back |
 | 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN |
 | 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix |
-| 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN |
+| 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN. ANSWERED 09:50: the LATEST STAGED copy (`78fdeb4689`); a view IN A PROJECTION GROUP; before -- not sure |
 | 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too |
 
 ## 1. Idle progress bar in the status bar -- STAGED
@@ -20804,7 +20807,7 @@ default, "Delay mouse wheel pass through (ms)", 0 to 99999;
 delay again to now + that value (so it runs 1000 ms from the LAST turn);
 `%APPDATA%\FreeCAD\user.cfg` line 812 -- `DockOverlayWheelDelay` = 1000.
 
-## 154. TechDraw: dragging a view leaves its geometry behind until release, under bgfx only (a defect) -- OPEN
+## 154. TechDraw: dragging a view leaves its geometry behind until release, under bgfx only (a defect) -- OPEN; ANSWERED 09:50 -- the 09:01 stage, a projection group
 
 **2026-10-16 09:47, the reporter:** "new defect. Techdraw drag move view does not
 move geometry, the view border and dimension does move along. when
@@ -20834,6 +20837,18 @@ for the bgfx page, each under the item's `sceneTransform()`, e.g. 752,
 `%APPDATA%\FreeCAD\user.cfg` 286 `PageRendererVg` = 1. By the
 note-taker's reading, the geometry's records not refreshed while the view
 moves (the frame's and the dimensions' are) -- NOT checked.
+
+**2026-10-16 09:50, the reporter answers a to c:** "entry 154. yes the latest
+staged copy. in projection group. not sure about before"
+The note-taker's reading: a -- the copy staged 09:01 today (`78fdeb4689`);
+b -- the dragged view is IN A PROJECTION GROUP (the document not said);
+c -- whether it happened before this stage, NOT KNOWN.
+The note-taker's note, READ in the source, nothing run: this morning's
+`3a5e7c0239` changed `QGIProjGroup`'s event filter (entry 148: with
+AutoDistribute on it took presses on any view below it and started a
+group drag; now "only its own views' presses"; its test checks that
+dragging a group's view moves the group, 10.16 mm) -- a candidate by the
+note-taker's reading, NOT checked.
 
 ## 155. TechDraw: an Active View still takes clicks over the views it overlaps, its background transparent (a defect) -- OPEN
 
