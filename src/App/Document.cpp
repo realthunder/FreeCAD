@@ -93,6 +93,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 
 #include <App/DocumentPy.h>
 #include <Base/Console.h>
+#include <Base/ConsoleContext.h>
 #include <Base/Exception.h>
 #include <Base/ExceptionSafeCall.h>
 #include <Base/FileInfo.h>
@@ -15254,7 +15255,12 @@ int Document::_recomputeFeature(DocumentObject* Feat)
                 FC_LOG("Skip recomputing " << Feat->getFullName());
             } else {
                 Feat->_enforceRecompute = false;
-                returnCode = Feat->recompute();
+                {
+                    // What it and its helpers warn of names it
+                    // (docs/HandsOnQueue.md entry 164)
+                    Base::ConsoleContext context(Feat->getFullName());
+                    returnCode = Feat->recompute();
+                }
                 // An input property changed inside execute(). Property::hasSetValue()
                 // threw, but AtomicPropertyChange's destructor swallows exceptions,
                 // so the latch is what makes this reliably fatal.
@@ -15284,9 +15290,25 @@ int Document::_recomputeFeature(DocumentObject* Feat)
         return 1;
     }
     catch (Base::Exception &e) {
-        e.ReportException();
-        FC_LOG("Failed to recompute " << Feat->getFullName() << ": " << e.what());
-        d->addRecomputeLog(e.what(),Feat);
+        // The report names the object: an execute() throws without saying
+        // whose it is ("No context, please double click the binder...",
+        // docs/HandsOnQueue.md entry 164). What the object itself keeps as
+        // its error stays as it was thrown: the tree and the panel show it
+        // on the object.
+        const std::string what = e.what();
+        const std::string name = Feat->getFullName();
+        if (e.getReported()) {
+            // reported where it was thrown, without the object maybe
+            if (what.find(name) == std::string::npos)
+                FC_ERR("Failed to recompute " << name << ": " << what);
+        }
+        else {
+            if (what.find(name) == std::string::npos)
+                e.setMessage(name + ": " + e.getMessage());
+            e.ReportException();
+        }
+        FC_LOG("Failed to recompute " << name << ": " << what);
+        d->addRecomputeLog(what.c_str(),Feat);
         return 1;
     }
     catch (std::exception &e) {

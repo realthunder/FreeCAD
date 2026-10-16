@@ -1074,7 +1074,7 @@ void SubShapeBinder::buildShape(TopoShape &result)
     Shape.setValue(result);
     auto res = executeExtensions();
     if (res) {
-        FC_ERR(res->Why);
+        FC_ERR(getFullName() << ": " << res->Why);
         delete res;
     }
 }
@@ -1130,6 +1130,11 @@ void SubShapeBinder::slotRecomputedObject(const App::DocumentObject& Obj) {
         try {
             update();
         } catch (Base::Exception &e) {
+            // after its context's recompute, not its own: the binder says it
+            // is its (docs/HandsOnQueue.md entry 164)
+            const std::string name = getFullName();
+            if (std::string(e.what()).find(name) == std::string::npos)
+                e.setMessage(name + ": " + e.getMessage());
             e.ReportException();
         }
     }

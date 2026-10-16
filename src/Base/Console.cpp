@@ -45,6 +45,41 @@ FC_LOG_LEVEL_INIT("Console");
 
 using namespace Base;
 
+#include "ConsoleContext.h"
+
+namespace
+{
+/// What this thread runs, named in its warnings and errors (ConsoleContext)
+thread_local std::string consoleContext;
+/// Inside the replay of a queued message: it was named where it was sent
+thread_local bool replayingQueued = false;
+
+/// \a msg naming the context, if a warning or an error that does not yet
+std::string inContext(bool warnOrError, const std::string& msg)
+{
+    if (!warnOrError || replayingQueued || consoleContext.empty()
+        || msg.find(consoleContext) != std::string::npos) {
+        return msg;
+    }
+    std::size_t end = msg.size();
+    while (end > 0 && (msg[end - 1] == '\n' || msg[end - 1] == '\r')) {
+        --end;
+    }
+    return msg.substr(0, end) + " [" + consoleContext + "]" + msg.substr(end);
+}
+}  // namespace
+
+ConsoleContext::ConsoleContext(const std::string& name)
+    : previous(consoleContext)
+{
+    consoleContext = name;
+}
+
+ConsoleContext::~ConsoleContext()
+{
+    consoleContext = previous;
+}
+
 //=========================================================================
 
 namespace Base
@@ -93,6 +128,15 @@ public:
     {
         if (ev->type() == QEvent::User) {
             ConsoleEvent* ce = static_cast<ConsoleEvent*>(ev);
+            // named where it was sent (postEvent), not by what runs here now
+            replayingQueued = true;
+            struct Replayed
+            {
+                ~Replayed()
+                {
+                    replayingQueued = false;
+                }
+            } replayed;
             switch (ce->msgtype) {
                 case ConsoleSingleton::MsgType_Txt:
                     Console().notifyPrivate(LogStyle::Message,
@@ -404,10 +448,13 @@ void Base::ConsoleSingleton::notifyPrivate(LogStyle category,
         }
     } dispatchGuard {this};
 
+    const std::string text = inContext(category == LogStyle::Warning || category == LogStyle::Error
+                                           || category == LogStyle::Critical,
+                                       msg);
     for (ILogger* Iter : observers) {
         if (Iter->isActive(category)) {
             Iter->SendLog(notifiername,
-                          msg,
+                          text,
                           category,
                           recipient,
                           content);  // send string to the listener
@@ -421,8 +468,10 @@ void ConsoleSingleton::postEvent(ConsoleSingleton::FreeCAD_ConsoleMsgType type,
                                  const std::string& notifiername,
                                  const std::string& msg)
 {
+    const bool warnOrError = type == MsgType_Wrn || type == MsgType_Err || type == MsgType_Critical;
     QCoreApplication::postEvent(ConsoleOutput::getInstance(),
-                                new ConsoleEvent(type, recipient, content, notifiername, msg));
+                                new ConsoleEvent(type, recipient, content, notifiername,
+                                                 inContext(warnOrError, msg)));
 }
 
 ILogger* ConsoleSingleton::Get(const char* Name) const
