@@ -37,6 +37,7 @@
 #include <Base/Reader.h>
 #include <App/Document.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/PropertyTopoShape.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include "FeatureFillet.h"
@@ -144,13 +145,20 @@ App::DocumentObjectExecReturn *Fillet::execute()
         TopTools_ListOfShape aLarg;
         aLarg.Append(baseShape.getShape());
         bool failed = false;
-        if (!BRepAlgo::IsValid(aLarg, shape.getShape(), Standard_False, Standard_False)) {
+        // Checked as it will be kept: a run on copies of the inputs (a
+        // frozen input refused, Part::Feature::recompute()) puts back what
+        // it did not change. Otherwise every face of the result is new to
+        // the base and checked whole, and a base face the file had as it is
+        // failed the fillet (Fillet007 in scanner.FCStd, entry 160).
+        if (!BRepAlgo::IsValid(aLarg, Part::ThawInputs::shareBack(shape.getShape()),
+                               Standard_False, Standard_False)) {
             ShapeFix_ShapeTolerance aSFT;
             aSFT.LimitTolerance(shape.getShape(), Precision::Confusion(), Precision::Confusion(), TopAbs_SHAPE);
             // For backward compatibility
             if (FixShape.getValue() == 0) {
                 shape.fix();
-                if (!BRepAlgo::IsValid(aLarg, shape.getShape(), Standard_False, Standard_False))
+                if (!BRepAlgo::IsValid(aLarg, Part::ThawInputs::shareBack(shape.getShape()),
+                                       Standard_False, Standard_False))
                     failed = true;
             }
         }
