@@ -276,10 +276,12 @@ across a branch switch and it is of an object deleted: the switch makes the
 objects again, so the check and its Python twin read them by name or id.
 
 **A file sent in pieces.** `scripts/transaction-log-request-check.py` (rq,
-49) sends 60 MB in fifteen pieces through the control ops from the host's
-own Python, and `tests/gui/serve-request-browser.py` (ctest
-`GuiServeRequestBrowser`, 7) has Chrome send the same size through the
-page's menu (docs/TransactionLog.md sec 32.36). Both raise the upload limit
+57) sends 60 MB in fifteen pieces through the control ops from the host's
+own Python, and takes one up again on another connection; and
+`tests/gui/serve-request-browser.py` (ctest `GuiServeRequestBrowser`, 9)
+has Chrome send the same size through the page's menu, through a TCP relay
+of the test's that cuts the connection a third of the way
+(docs/TransactionLog.md sec 32.36, 32.37). Both raise the upload limit
 and what may wait for the run and put them back: these checks run on the
 user's own `user.cfg` -- `FREECAD_USER_HOME` does not move it -- so a check
 that leaves a share setting changed leaves it changed for the desktop too.

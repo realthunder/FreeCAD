@@ -20217,6 +20217,64 @@ more than once, and ends at the whole; the host has it waiting under the
 page's name, its bytes the file's, and nothing of the pieces held after.
 `scripts/request-drive.js` reads the progress line.
 
+### 32.37 The pieces on disk, and taken up again after a drop (2026-10-16)
+
+**Asked** ("do the small follow ups on upload first"): the two 32.36 left
+-- the pieces were held in memory until the file was taken, up to the
+ceiling for each of four uploads; and a connection that dropped in the
+middle began again from nothing.
+
+**On disk as they come.** `upload.begin` makes a file of the host's,
+`<temp>/BrowserUploads.pieces/<upload>.part`, and each piece is appended to
+it; what an upload holds in memory is one piece while it is decoded. The
+op that takes the file is handed the path (`SceneRequests::takeUpload()`,
+beside `decode()` for a file sent whole):
+
+- `widgets.upload` moves it into place, a rename within the temp
+  directory;
+- `requests.send` copies it into the log's store with
+  `Document::keepSentFileAt()`, which `insertFile()`s it -- hashed as it is
+  copied -- where `keepSentFile()` adopts bytes; the row is the same; a
+  document with no log moves it into the requests' directory.
+
+An upload let go -- cancelled, replaced, idle, refused -- takes its file
+with it, and a process that ended in the middle of one leaves files that
+the first upload of the next clears.
+
+**Taken up again.** `upload.begin` answers a `resume` token too, 128 bits
+from the system's generator, said only to the connection that began it.
+`upload.begin {resume}` on another connection -- the page's socket dropped
+and came back -- finds the upload whose token it is, when the connection is
+the same someone as the roster knows them, binds it to the new connection
+and answers where it stood: `received` and `size`. The connection it left
+knows it no more. A token that is no upload's is `UnknownUpload`, as is one
+from someone else; a connection that may only look may not ask. What the
+host keeps meanwhile is what it kept: two minutes after the last piece.
+
+The page (`sendFile()`): a piece or the closing op that fails because the
+connection went -- `Offline` or `Timeout` -- is waited out, asking again
+with the token every second for up to 90 s, and the pieces go on from what
+the host says it has; a piece sent before the drop that the host had
+written does not go again. The line at the foot of the page says "waiting
+for the connection..." meanwhile. And `control.ts` rejects every op still
+waiting when the socket drops, as `Offline`: its answer was the dropped
+connection's and will not come, where before each waited out its timeout.
+
+**Tests.** `scripts/transaction-log-request-check.py` (rq, 57, +8): the pieces
+in a file as they come, the size of what came; a token that is not the
+upload's, and a view-only connection, take nothing up; taken up on another
+connection where it stood, the one it left refused; the rest sent from
+there and taken whole, the file gone, its bytes the bytes sent; one
+cancelled takes its file with it. `tests/gui/serve-request-browser.py`
+(9, +2): the page reaches the host through a TCP relay of the test's, which
+cuts every connection once a third of the file has come -- a network that
+dropped, which the viewer reconnects after, where a kick would tell it not
+to; the page says it waits, goes on, and what it sent through the relay is
+the file once and not much more. Measured, not assumed: the socket deflates
+its messages, so 60 MB as base64 crossed as 60.3 MB -- 1.01 a byte up to the
+cut, at 20 MB, and the same after it, where beginning again would have sent
+a third more.
+
 ## 33. What the merge into LinkVibe exposed (2026-10-12)
 
 `origin/Transaction` at `09c96678f1` was merged into `LinkVibe` on the
