@@ -173,6 +173,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 18:04: entry 166 -- the build session sees the same four warnings in
+the FIRST recompute of a fresh HEADLESS open (no revert): not the
+revert's doing; the reporter's GUI first open printed none.** Under the
+entry.
+
 **2026-10-16 18:03: NEW entry 166 -- after a REVERT of scanner.FCStd, the blob
 manager's "Included file ... is missing from the document" (four hashes,
 twice, in the recompute after the revert; none after the first open) --
@@ -3327,7 +3332,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 163 | 2026-10-16 | a question (said to the build session, relayed): why a DIALOG keeps POPPING UP saying some DLL is not accessible | OPEN; the exact text asked of the reporter by the build session; candidates (the build session's): its own launches without the conda PATH (0xC0000135, a Windows system box even for a hidden process), or Apex blocking the staged copy's DLLs (see 161) |
 | 164 | 2026-10-16 | a change request: the FULL OBJECT NAME (docname@objname) in the error message "<Exception> SubShapeBinder.cpp(330): No context, please double click the binder in the desired context to refresh"; and an AUDIT of the code base for this kind of message reported by an object's execute(), each to mention the object's name | OPEN; read by the note-taker, nothing run: a recompute's exception is printed by `e.ReportException()` in Document::_recomputeFeature (Document.cpp 15286-15290) WITHOUT the object; the name goes only to an FC_LOG line (log level, not shown by default), as getFullName = "doc#obj". 17:41 ADDED: "check why this error does not mark the binder as recompute error" -- read by the note-taker, nothing run: BOTH of the message's paths mark the object (setErrorDescription and the recompute's catch reach addRecomputeLog, which sets ObjectStatus::Error), so the mark is either SWALLOWED (slotRecomputedObject, SubShapeBinder.cpp 1124-1134, catches update()'s throw with ReportException only) or CLEARED by a later successful update/recompute; NOT found by reading. 17:46 the build session takes it after 160; it would use the existing "doc#obj" unless told '@'. 17:52 the 17:41 question WITHDRAWN by the reporter: the binder found, Binder008, and it IS marked as an error -- the note-taker's two candidates (swallowed, cleared) moot; the request (the name in the message, the audit) stands |
 | 165 | 2026-10-16 | a change request: OMNI SEARCH -- (1) a new type /error filtering on ALL objects marked as RECOMPUTE ERROR; (2) the OBJECT LIST in the completer: ONE item per object, not separate name and label items; the label, as <<label>>, in the item's DESCRIPTION (and TOOLTIP) when it differs, leading, then the object's usual description; TAB completes to <<label>> (not the internal name) when the typing starts with << or matches a label that differs from the name; this completion for BOTH the unfiltered and the /error list | OPEN; read by the note-taker, nothing run: the object list is ExpressionCompleter's (OmniSearchBox.cpp 1037/1041), which lists a name row and a label row per object (ExpressionCompleter.cpp 262-270) and is SHARED with the expression editors |
-| 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt |
+| 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt. 18:04 the build session: the SAME four warnings, TWICE, in the FIRST recompute after a FRESH HEADLESS open of a scanner copy (r86, ~17:40, no revert) -- so NOT the revert's doing; the reporter's GUI first open at 17:36 printed NONE (the note-taker re-checked the live copy: all 8 lines are after the revert); why the GUI first open is silent not known |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -22240,6 +22245,24 @@ or the recompute ran by itself; b. whether anything looks wrong in the
 document (a missing texture, material, embedded file) or only the
 warnings; c. whether a plain close and reopen, without the revert, shows
 them.
+
+**2026-10-16 18:04, the build session (a fact from its own runs, no new work):**
+the same four "FileBlobManager.cpp(2203): Included file ... is missing
+from the document" lines (11e3007a... named by 3 properties; d48374a0...;
+e37c6b4a...; f1cbabe1...) appear TWICE in the FIRST recompute after a
+FRESH HEADLESS open of a scanner.FCStd copy (FreeCADCmd, r86; its 160
+probe 3, e160r\run.log, about 17:40). There was NO revert. Its reading:
+not the revert's doing; on the reporter's 17:36 open it may have gone
+unprinted or been missed. Not investigated further; 160 first.
+The note-taker re-checked the kept copy of the live console: the session
+starts 17:35:59 (the MCP console line), the first open's recompute
+17:36:31-17:36:56 is in it, and ALL 8 "Included file" lines are at
+17:59:52/17:59:57, after the revert. So: headless, first open -> the
+warnings; GUI, first open -> none printed; GUI, after a revert -> the
+warnings. The note-taker's correction of 18:03: the revert is NOT shown
+to be the cause; what differs between the GUI's first open and the
+others is the open question (the progressive load of a GUI open, entry
+162's string-table and settle work, is one difference -- a guess).
 
 ## Inbox
 
