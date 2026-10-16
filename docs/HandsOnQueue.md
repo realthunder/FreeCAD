@@ -168,6 +168,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 10:44: entry 159 -- asked to check whether a handle can get the
+outline by routing special element names in getDetailPath /
+getElementPicked: the names yes (Sketcher's precedent), but the handles
+hang outside the selection root whose render cache draws the outline --
+two ways under the entry (the note-taker's reading).**
+
 **2026-10-16 10:41: entry 159 -- the reporter corrects the note-taker: Coin's
 render cache path (mode 3) renders the outline too; the "D3D11 only"
 answer withdrawn.** Under the entry.
@@ -3178,7 +3184,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels |
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed. 10:22: the timer's sync must NOT AUTO-SCROLL the tree; the reporter ASKS the note-taker to elaborate the edit-session exception -- elaborated under the entry, a question back (SyncView into a view in an edit) |
 | 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more |
-| 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too |
+| 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too. 10:44: the reporter -- the outline needs getDetailPath / getPickedElement to route a special element name to the handle's Coin node; "check if it's possible first" -- the note-taker's check (reading): the NAMES can be routed (Sketcher does), but the handles hang OUTSIDE the selection root whose render cache draws the outline, so naming alone does not reach it |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21351,6 +21357,65 @@ READ in the source, nothing run: `src/Gui/Inventor/SoFCRenderer.cpp`
 `renderSceneOutline()`, 388-390 `seloutline` / `preseloutline` ("all
 explicitly selected [preselected] triangles for outline rendering");
 `src/Gui/Inventor/SoFCRenderCache.h` 464 a material's `outline` flag.
+
+**2026-10-16 10:44, the reporter:** "for that to work, you'll need some magic done
+in the getDetailPath and getPickedElement to route between some special
+element name and coin note for the handle. check if it's possible first"
+
+The note-taker's reading: for the handles to get the selection outline,
+the dress-up view provider's `getDetailPath()` and `getElementPicked()`
+would map a special element name (one per handle) to the handle's Coin
+node and back, so the normal selection machinery draws it. Asked: CHECK
+whether that is possible, before building.
+
+The note-taker's check (READ in the source, nothing run; the note-taker's
+reading, NOT verified by a build):
+1. THE NAMES: possible. Precedent: `ViewProviderSketch::getElementPicked`
+   (`src/Mod/Sketcher/Gui/ViewProviderSketch.cpp` 1908-1957) names picks
+   on the EDIT geometry ("edge3", "vertex2" in lower case, "Constraint5");
+   its `getDetailPath` (1959-1995) resolves its own internal names and
+   REFUSES "Constraint" -- its edit highlight it draws itself.
+2. WHERE THE HANDLES ARE: `GizmoContainer::attachViewer`
+   (`src/Gui/Inventor/Draggers/Gizmo.cpp` 1296-1312) puts them in the
+   viewer's EDITING ROOT (`setupEditingRoot`), which
+   `View3DInventorViewer::hangEditingRoot` (about 9518-9534) hangs under
+   the AUX ROOT -- "a SIBLING of the render-cache-captured selectionRoot".
+3. WHERE THE OUTLINE IS DRAWN: the selection and preselection outline is
+   the SELECTION ROOT's render cache (`SoFCRenderer` seloutline /
+   preseloutline, 388-390; RenderPassSelectionOutline, 286). A selection
+   reaches it as a path that STARTS AT the selection root
+   (`src/Gui/View3DInventorSelection.cpp` 413-440: `nodePath->append(
+   selectionRoot)` then `vp->getDetailPath(...)`, and the path must
+   descend). A path into the editing root does not start there -- so a
+   name routed by `getDetailPath` to a handle node gives the manager
+   NOTHING to outline. Naming alone is NOT enough.
+4. WHAT THE EDIT ROOT HAS:
+   - bgfx: the editing root is captured by its own render cache
+     (`editingCapture`, View3DInventorViewer.cpp 1405-1431) with a
+     highlight feed -- `setEditingHighlight(items)` (about 9536-9551),
+     items by detail OR BY PATH, the sketcher's preselection uses it.
+     That feed goes to the backend as a plain overlay
+     (`SoFCRenderer.cpp` 524-535, `feedOverlayHighlight`); an OUTLINE for
+     it -- NOT found by reading.
+   - Coin only: `canEditingHighlight()` is false; "otherwise Coin does,
+     and the highlight has to be in the graph it draws" -- the edit root
+     is drawn by plain Coin, no render cache, NO outline pass.
+5. So, by the note-taker's reading, two ways:
+   A. Put the handles INTO the selection root's graph during the edit (under
+      the edited view provider's own nodes), then route the names in
+      `getElementPicked` / `getDetailPath`: the outline comes on both
+      paths from the existing selection machinery. Costs to check: a
+      handle moving in a drag changes the cached graph every frame (cache
+      rebuilds); handles become scene geometry (bounding box / fit all --
+      `SoSkipBoundingGroup` exists for that; clipping and section; shadows);
+      they must draw on top of the model; a pick now meets the handle and
+      the faces in one pass.
+   B. Keep them in the editing root and give the EDIT capture an outline:
+      on bgfx, the highlight feed's paths (exists) plus an outline for the
+      overlay highlight (new in the backend); on the Coin path, the edit
+      root drawn through a render cache of its own (new).
+   A reuses what exists and is the shorter road by the note-taker's
+   reading, with the drag cost the first thing to measure. NOT agreed.
 
 ## Inbox
 
