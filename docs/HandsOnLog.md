@@ -7361,3 +7361,55 @@ nothing; the ten under a dimension's line select that dimension.
 the dimension, on a part view and a group's view; the dimension line away
 from its label; the label; a group's view dragged 10 mm moves the group
 10.16), section-line click 10.
+
+## Entries 151, 153 to 156, 138 (2026-10-16) -- LOCAL, not pushed, not staged
+
+**151, the scanner's page selecting and drawing nothing at the first
+open.** `b6e4813887`. A page opened during a progressive load -- its view
+providers made, the document still flagged as restoring -- had every part
+view skip its draw, and no one asked again: the view providers had asked
+at the end of their own restore, and a view whose geometry came with the
+file signals no paint later. Empty items: nothing on the Qt layer, nothing
+to pick under the backend's. A skipped draw now asks itself once. On the
+copy with the reporter's settings, Page009 opened 50 ms after the open:
+none of the 93 + 43 edges selected anything before; after, as with the
+page opened late. The reporter's Qt observation ("non of the face the
+edges are even drawn") is the same skipped draw.
+
+**153, the wheel delay.** `0d6816c312`: DockOverlayWheelDelay's default
+1000 -> 300 ms, the logic unchanged (the timer restarts on each notch).
+A value the reporter has stored stays theirs -- their user.cfg holds 1000,
+so on their copy the change shows only after that key is reset.
+
+**154, a projection group's geometry behind its frame in a drag.**
+`0c28946f6d`: an upstream slip -- QGIViewCollection's setFlags() dropped
+QGIView's ItemSendsGeometryChanges, so a group wrote its X and Y only at
+the release, and the backend's layer places the lines by them.
+
+**155, overlap pass-through.** `6af132eb0b`. A picture, a symbol (and a
+spreadsheet's view), an annotation and a rich annotation are picked where
+their content draws (alpha over 24 in a mask of the content painted once
+per draw); a click on a clear part goes through. The band along a frame
+takes a click only while the frame shows. With the page's frames hidden, a
+view shows its frame and label while anything of it is selected -- a
+dimension's or balloon's view, a group's view's group -- and can be
+dragged by it; hover shows nothing. Qt picks a point by
+collidesWithPath(), not contains(): r77 with contains() alone changed
+nothing.
+
+**138, headers.** `a5075bdbd4`: the overlay's sheet's QHeaderView::section
+background keeps its colour and takes DockOverlayAlpha (the items'
+alpha); the "Picked object list" check box gets the header's ground.
+
+**156, navicube axis labels.** `5cdcce4ece`: each pack states
+NaviCube/ThemeAxisLabelColor (light grey for the six dark packs, black for
+the three light ones); a hand-set AxisLabelColor wins.
+
+**Tests (r80):** TechDraw click-through 17, page before its view providers
+14 (after a fix to the test: its document's name starts with "Page", and
+closing every window titled "Page..." closed the 3D view and with it the
+document), overlay header grounds 14, section-line click 10, navicube 6,
+overlay pass-through 18, TestChamfer 11. Scanner Front010: the same 39 as
+on r74 (23 an end vertex, 6 the edge lying over them, 10 their dimension).
+r79's configure hung an hour in a try-compile and was stopped; r80 is the
+same tree.
