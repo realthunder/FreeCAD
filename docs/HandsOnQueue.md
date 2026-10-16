@@ -168,6 +168,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 11:08: entry 160 ANSWERED -- scanner.FCStd, open then recompute: a
+missing edge on Adaptor, its fillet face gone; yesterday the same steps
+showed it.** Under the entry.
+
 **2026-10-16 11:02: the build session -- 151 CAUSE FOUND and FIX verified on
 r76 (a page shown while the document still restores skipped its draws);
 153 done in the source (300 ms); 154 CAUSE FOUND (old code: a group never
@@ -3207,7 +3211,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed. 10:22: the timer's sync must NOT AUTO-SCROLL the tree; the reporter ASKS the note-taker to elaborate the edit-session exception -- elaborated under the entry, a question back (SyncView into a view in an edit) |
 | 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more. 11:02: a probe times the first page show in build r77 |
 | 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too. 10:44: the reporter -- the outline needs getDetailPath / getPickedElement to route a special element name to the handle's Coin node; "check if it's possible first" -- the note-taker's check (reading): the NAMES can be routed (Sketcher does), but the handles hang OUTSIDE the selection root whose render cache draws the outline, so naming alone does not reach it. 10:52 RULED: way B -- the handles stay in the editing root, the edit capture gets an outline (bgfx overlay highlight; a render cache for the Coin edit root); A rejected, it "defeats per view edit". 10:54: element-name routing ONLY IF NECESSARY -- by the note-taker's reading NOT needed (a handle's hover is found by its own node, its path can feed the edit highlight directly) |
-| 160 | 2026-10-16 | a defect and a change request: FILLET EDITING -- the fillet FACE of a MISSING edge reference is GONE (yesterday it was there, its highlight working), after entry 143's skip-and-red; and NEW: HOVERING an EDGE ITEM in the task panel highlights its fillet face, normal and missing alike, with the SILHOUETTE OUTLINE following the selection style | OPEN; by the note-taker's reading a regression of 143 |
+| 160 | 2026-10-16 | a defect and a change request: FILLET EDITING -- the fillet FACE of a MISSING edge reference is GONE (yesterday it was there, its highlight working), after entry 143's skip-and-red; and NEW: HOVERING an EDGE ITEM in the task panel highlights its fillet face, normal and missing alike, with the SILHOUETTE OUTLINE following the selection style | OPEN; by the note-taker's reading a regression of 143. ANSWERED 11:08: scanner.FCStd, OPEN then RECOMPUTE -> a missing edge on Adaptor, the failed fillet face MISSING; yesterday the same operation showed it |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21533,7 +21537,7 @@ down to `ownNode`) can go straight into the edit capture's highlight
 in the selection itself (the tree, the selection view, Python) -- nobody
 asked for that. NOT checked by a build.
 
-## 160. Fillet editing: a missing edge's fillet face is gone; hovering an edge item in the task panel outlines its fillet face (a defect, a change request) -- OPEN
+## 160. Fillet editing: a missing edge's fillet face is gone; hovering an edge item in the task panel outlines its fillet face (a defect, a change request) -- OPEN; ANSWERED 11:08 -- scanner, open then recompute, Adaptor
 
 **2026-10-16 11:00, the reporter:** "new defect/request, fillet editing the fillet
 shape of the missing edge reference is gone. it's still there yesterday
@@ -21574,6 +21578,24 @@ READ in the source, nothing run:
   session -- FailedShape is not saved and the result now leaves the edge
   out -- so there is nothing to show; before 143 the feature in error
   kept its old shape, and the old fillet face with it.
+
+**2026-10-16 11:08, the reporter answers:** "entry 160. scanner document, open
+then recompute got missing edge on Adaptor, failed fillet face missing.
+yesterday it's there with the same operation"
+The note-taker's reading:
+- The steps: open scanner.FCStd; recompute; the fillet on "Adaptor" (by
+  the note-taker's reading a body or part of that name, its fillet
+  feature) has a MISSING edge reference; in its edit the FAILED fillet
+  face is NOT shown.
+- b answered: the same steps yesterday (a fresh open, then a recompute)
+  showed the face.
+- By the note-taker's reading this fits the 11:00 guess: at the open the
+  feature holds its saved shape (the face in it); the recompute now
+  builds the partial result without the missing edge, and FailedShape
+  (not saved) has no face "as last made" in this session -- so the face
+  is gone; yesterday the recompute failed and the feature kept the saved
+  shape. NOT checked.
+NOT said: c (the chamfer), d (a failed, not missing, edge).
 
 ## Inbox
 
