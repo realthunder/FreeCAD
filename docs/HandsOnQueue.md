@@ -168,6 +168,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 09:47: NEW ENTRY 154 (a defect) -- TechDraw, a dragged view's
+geometry stays behind (frame and dimensions follow) until release, under
+bgfx only.** Under the entry.
+
 **2026-10-16 09:44: entry 151 ANSWERED -- only at the FIRST LOAD of
 scanner.FCStd; switching to another page and back, Page009 selects
 again.** Under the entry.
@@ -3096,6 +3100,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 151 | 2026-10-16 | a defect: opening `scanner.FCStd` NOW, NONE of the TechDraw EDGES or FACES can be selected; DIMENSIONS can (by line or label); rendered under QT, NONE of the faces or edges are even DRAWN | OPEN; by the note-taker's reading on the copy staged 09:01 (`78fdeb4689`), a regression of the TechDraw picking work (entries 148, 149). ANSWERED 09:44: only on FIRST LOADING the document -- after switching to another page it works, and Page009 works too after switching back |
 | 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN |
 | 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix |
+| 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20793,6 +20798,37 @@ default, "Delay mouse wheel pass through (ms)", 0 to 99999;
 delay again to now + that value (so it runs 1000 ms from the LAST turn);
 `%APPDATA%\FreeCAD\user.cfg` line 812 -- `DockOverlayWheelDelay` = 1000.
 
+## 154. TechDraw: dragging a view leaves its geometry behind until release, under bgfx only (a defect) -- OPEN
+
+**2026-10-16 09:47, the reporter:** "new defect. Techdraw drag move view does not
+move geometry, the view border and dimension does move along. when
+released the geometry is moved correctly. this only happen on bgfx
+renderer. qt works correctly."
+
+The note-taker's reading:
+- On a TechDraw page, a view dragged with the mouse: its FRAME (border)
+  and its DIMENSIONS follow the pointer, its GEOMETRY (edges, faces) stays
+  where it was during the drag.
+- On release the geometry jumps to the right, new place.
+- Only with the page drawn by BGFX; with Qt drawing the page the
+  geometry follows the drag.
+- By the note-taker's reading the bgfx page renderer is the setting
+  `PageRendererVg` (on in the reporter's config) -- the same switch as
+  entry 151's "render under Qt".
+NOT said:
+a. the copy -- the one STAGED 09:01 today (`78fdeb4689`), by the
+   note-taker's reading;
+b. the document and view kind (scanner.FCStd? a single part view or one
+   in a projection group);
+c. new with this stage, or older.
+READ in the source and the reporter's config, nothing run:
+`src/Mod/TechDraw/Gui/PageFeed.cpp` (2122 lines; the Qt items' records
+for the bgfx page, each under the item's `sceneTransform()`, e.g. 752,
+777, 786, 813); `src/Mod/TechDraw/Gui/QGVPage.cpp` (the setting);
+`%APPDATA%\FreeCAD\user.cfg` 286 `PageRendererVg` = 1. By the
+note-taker's reading, the geometry's records not refreshed while the view
+moves (the frame's and the dimensions' are) -- NOT checked.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20804,5 +20840,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 153
+the build session, 131 and 132 found by it; entries 134 to 154
 are of 2026-10-15, 134 said to the build session)
