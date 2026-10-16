@@ -168,6 +168,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 10:09: NEW ENTRY 157 (a defect, a design to discuss) -- tree
+selection vs per-view selection: a tree click that switches to the 3D view
+leaves the tree showing a selection the view has not; the reporter's
+proposal (broadcast to local views, a timer sync on activation, no SyncView
+loop) and the note-taker's answer under the entry, NOT agreed.**
+
 **2026-10-16 10:02: entry 156 ANSWERED -- from each theme, a colour set by hand
 wins, the axis labels only.** Under the entry.
 
@@ -3130,6 +3136,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN. ANSWERED 09:50: the LATEST STAGED copy (`78fdeb4689`); a view IN A PROJECTION GROUP; before -- not sure |
 | 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too. ANSWERED 09:51: EVERY VIEW; the rule: wherever an area is RENDERED TRANSPARENT, the click goes THROUGH. ANSWERED 09:53: ANYTHING NON-TRANSPARENT registers a click; a HIDDEN FRAME does NOT (reverses entry 149's band along a hidden frame) |
 | 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels |
+| 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20972,6 +20979,85 @@ The note-taker's reading: a -- each theme (preference pack) carries its
 own axis label colour; b -- a colour the user set by hand wins over the
 theme's; c -- only the axis labels, the cube's other colours unchanged.
 
+## 157. Tree selection vs per-view selection: a tree click that switches the view leaves the tree showing a selection the view has not (a defect, a design to discuss) -- OPEN
+
+**2026-10-16 10:09, the reporter:** "new defect/request. this is a design problem
+actually that we need to discuss. it's about how to handle tree item
+selection vs per view selection. Right now, say the active view is a
+techdraw page, and I click a tree item. with the default view sync option
+on, the selection auto switched to the 3d view that the selected item
+lives. this cause an inconsistent state of the 3d view, which has no
+selection, and the tree, shows the item is selected. what's worse, there
+is no easy way to clear the seeming stuck selected tree item. my current
+thoughts are, any direct selection to the tree item shall broadcast to all
+local (i.e. non client serving) views. and when active view switched, use
+a timer to sync tree view selection with the active view. Be careful with
+interaction with the 'view sync' option to avoid circular loop. what do
+you think"
+
+The note-taker's reading:
+- The defect: active view a TechDraw page; a click on a tree item;
+  `SyncView` ("Auto switch to the 3D view containing the selected item",
+  on) makes the item's 3D view active; that view shows NO selection, the
+  tree shows the item SELECTED; the tree item then looks stuck selected.
+- The reporter's proposal: (1) a DIRECT tree selection goes to EVERY
+  LOCAL view (not the views serving a client); (2) on an active-view
+  switch, a TIMER brings the tree in line with the active view's
+  selection; (3) no loop with SyncView.
+- Asked of the note-taker: "what do you think" -- answered in the reply,
+  summarised below as the note-taker's, NOT agreed.
+
+READ in the source and the reporter's config, nothing run:
+- `user.cfg` 783 `PerViewSelection` = 1 (every view its own selection
+  instance; `docs/TaskPanelPerView.md` sec 12; default off), 933
+  `SyncView` = 1, 934 `SyncSelection` = 1.
+- `src/Gui/Tree.cpp` 5287-5388 (the tree's selection-changed handler):
+  the tree selects into `Gui::Selection()`, the AMBIENT instance = the
+  ACTIVE view's -- the TechDraw page's; `blockSelection(true)` is held
+  for the whole handler, and `syncView()` (666-683,
+  `setActiveView(item->object())`) runs at its END, 5383-5385, still
+  inside the block.
+- `src/Gui/MDIView.cpp` 123-137 `updateAmbientSelection()`: the new
+  active view's instance becomes ambient; the panels are moved and told
+  "read the selection again" (sec 12.2) -- but
+  `src/Gui/Selection/Selection.cpp` 308-311 drops every message to a
+  BLOCKED observer.
+- So, by the note-taker's reading (a guess from the source, NOT checked):
+  the item went into the PAGE's instance, the switch made the 3D view's
+  (empty) instance ambient, and the tree's "read again" was dropped
+  because the tree was still blocked -- it keeps showing the old
+  selection. It is "stuck" because the 3D view has nothing to clear, and
+  a click on an already-selected tree item changes nothing. Going back to
+  the page would show the item selected again (it is in the page's
+  instance).
+
+The note-taker's answer (given in the reply, 10:09; the note-taker's
+opinion, NOT agreed, NOT relayed as an order):
+a. AGREE with (1), with one exception: a view IN AN EDIT or owning a
+   task dialog keeps its instance to itself (sec 12.1, the reporter's own
+   "each edit session shall have their own selection instance to avoid
+   leaking"); when the ACTIVE view is in an edit, the tree goes to it
+   alone, as now. Client views excluded, as said. Copy the tree's
+   RESULTING set into each instance rather than replaying the click, so
+   Ctrl-click, range and clear behave the same everywhere; each view's
+   gate still applies.
+b. AGREE with (2), the direction ONE WAY only: the active view's
+   instance -> the tree (and the property and selection views), never the
+   tree -> an instance. A 0 ms single-shot timer is enough -- its job is
+   to run after the tree's handler has let go of its block (the dropped
+   message above) and to merge the bursts of activation (split views,
+   MDI switches).
+c. The loop: SyncView may switch views ONLY on a user's direct tree
+   click; the timer's sync runs with SyncView disabled (the existing
+   `disableSyncView` guard) and the tree's own handler blocked. With (1)
+   the 3D view switched to already holds the same set, so the timer's
+   sync finds nothing to change -- the cycle ends there.
+d. Also: a 3D pick stays in its own view (not broadcast) -- the
+   reporter said "direct selection to the tree item" only.
+e. With `PerViewSelection` off (the default) the views share one
+   instance, so (1) only matters for views in an edit -- excluded by (a)
+   -- and (2) still fixes the stale tree.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20983,5 +21069,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 156
+the build session, 131 and 132 found by it; entries 134 to 157
 are of 2026-10-15, 134 said to the build session)
