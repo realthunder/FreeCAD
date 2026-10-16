@@ -173,6 +173,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 17:59: NEW entry 165 -- omni search: /error for objects in
+recompute error; one completer row per object with <<label>> leading
+its description and tooltip; Tab to <<label>> when typed so, in both
+lists.** Under the entry.
+
 **2026-10-16 17:52: entry 164 -- the reporter found the binder, Binder008, and it
 IS marked as an error: the 17:41 question withdrawn; the request stands.**
 Under the entry.
@@ -3316,6 +3321,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 162 | 2026-10-16 | a request (said to the build session, relayed): find what the INVALID NAME LENGTH warnings are when opening `scanner.FCStd` | OPEN; the build session: 21 warnings "<ElementMap> ElementMap.cpp(2401): invalid name length ..." at every GUI open since 10-10..10-12, none headless; all from the colour walk of eight PD features INSIDE the read (39c692c6c5, 10-08); the after-read settle pass never ran (264 in-read, 0 settle) under the progressive load; a FIX building r83, not committed. 15:43 ROOT CAUSE FOUND and FIXED by the build session, NOT committed: in a GUI open Document::Restore takes the file's string table ("kept apart", d522d3064a of 09-27) but left index 0 (every shape's HasherIndex) on the table set aside -> element maps built against the wrong table; fix: the taken table re-registered as index 0; on r85 0 warnings (21 before); the settle pass runs (264 of 264); 313 objects' face colours identical before/after; a link to 160 not checked. 16:12 DONE `15289190d8` + `1bcd48431b` LOCAL, not pushed, not staged (r86: 0 warnings; new GUI tests 3/3 and 4; Document.py 236, Part appearance 35 OK). A VISIBLE CHANGE for the reporter to look at: 20 scanner objects now draw their faces in their source features' colours (each drew in ONE colour before) -- by the build session's reading the mapping working again as before ~10-11, NOT confirmed by the reporter. 17:33 PUSHED 17:32:50 (`54b5805b13`, by the reflog), on the reporter's word to the build session; the restage from build r86 RUNNING. 17:34 STAGED 17:34:10 CLEAN (INSTALLED.txt: fcad `0bcd954c01`, code = pushed `54b5805b13`, FreeCADGui 15:49:19 = build r86) |
 | 163 | 2026-10-16 | a question (said to the build session, relayed): why a DIALOG keeps POPPING UP saying some DLL is not accessible | OPEN; the exact text asked of the reporter by the build session; candidates (the build session's): its own launches without the conda PATH (0xC0000135, a Windows system box even for a hidden process), or Apex blocking the staged copy's DLLs (see 161) |
 | 164 | 2026-10-16 | a change request: the FULL OBJECT NAME (docname@objname) in the error message "<Exception> SubShapeBinder.cpp(330): No context, please double click the binder in the desired context to refresh"; and an AUDIT of the code base for this kind of message reported by an object's execute(), each to mention the object's name | OPEN; read by the note-taker, nothing run: a recompute's exception is printed by `e.ReportException()` in Document::_recomputeFeature (Document.cpp 15286-15290) WITHOUT the object; the name goes only to an FC_LOG line (log level, not shown by default), as getFullName = "doc#obj". 17:41 ADDED: "check why this error does not mark the binder as recompute error" -- read by the note-taker, nothing run: BOTH of the message's paths mark the object (setErrorDescription and the recompute's catch reach addRecomputeLog, which sets ObjectStatus::Error), so the mark is either SWALLOWED (slotRecomputedObject, SubShapeBinder.cpp 1124-1134, catches update()'s throw with ReportException only) or CLEARED by a later successful update/recompute; NOT found by reading. 17:46 the build session takes it after 160; it would use the existing "doc#obj" unless told '@'. 17:52 the 17:41 question WITHDRAWN by the reporter: the binder found, Binder008, and it IS marked as an error -- the note-taker's two candidates (swallowed, cleared) moot; the request (the name in the message, the audit) stands |
+| 165 | 2026-10-16 | a change request: OMNI SEARCH -- (1) a new type /error filtering on ALL objects marked as RECOMPUTE ERROR; (2) the OBJECT LIST in the completer: ONE item per object, not separate name and label items; the label, as <<label>>, in the item's DESCRIPTION (and TOOLTIP) when it differs, leading, then the object's usual description; TAB completes to <<label>> (not the internal name) when the typing starts with << or matches a label that differs from the name; this completion for BOTH the unfiltered and the /error list | OPEN; read by the note-taker, nothing run: the object list is ExpressionCompleter's (OmniSearchBox.cpp 1037/1041), which lists a name row and a label row per object (ExpressionCompleter.cpp 262-270) and is SHARED with the expression editors |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -22132,6 +22138,58 @@ The note-taker's reading:
   Fillet011) -- by the note-taker's reading possibly tied to 160's
   missing edges; not checked.
 
+## 165. Omni search: a /error type for objects in recompute error; one completer item per object, the label in its description, Tab to <<label>> (a change request) -- OPEN
+
+**2026-10-16 17:56, the reporter:** "new request, in omni search add a new type
+/error to filter on all objects marked as recompute error. also change
+how object list in the completer, do not show the same object with their
+name and label in separate items, even if the name and label are
+different. instead, put the lable, with << and >> in the description if
+they are different. Note, when user typing starts with << and then tab,
+or the user typing matched the label that is different from name even
+without leading <<, tab complete shall use the <<labe_name>> instead of
+internal name"
+**About 17:58, the reporter adds:** "later name completion applies to both
+unfiltered and error filtered object list"
+**About 17:59, the reporter adds:** "description (and tooltip) leads with
+label, followed by the object usual description field content"
+(Both additions arrived while the note-taker was reading the source; the
+times are when they were seen.)
+The note-taker's reading:
+- (1) /error: a new mode beside "/ " (objects), "/cmd", "/param"
+  (OmniSearch::modePrefix, OmniSearch.cpp 62-80): the object list
+  narrowed to objects marked in recompute error (ObjectStatus::Error,
+  as entry 164's Binder008 is) -- in ALL open documents ("all objects").
+- (2) ONE row per object. Today a name row AND a <<label>> row when the
+  two differ. The row's DESCRIPTION line and its TOOLTIP LEAD with
+  <<label>> when the label differs from the name, then the object's
+  usual description.
+- (3) TAB inserts <<label>> instead of the internal name when the typing
+  starts with "<<", or the typing matches a label that differs from the
+  name (without "<<"); otherwise the internal name as today.
+- (4) (3) holds in both the plain object list and the /error list.
+Pointers, READ in the source, nothing run:
+- The object list is ExpressionCompleter's (`src/Gui/OmniSearchBox.cpp`
+  1037, 1041, two instances); its rows are a name row (index*2) and a
+  label row (index*2+1) per object, collapsed to one only when the label
+  IS the name (`src/Gui/ExpressionCompleter.cpp` 262-270). The same
+  completer serves the EXPRESSION editors (property editor, task-panel
+  spin boxes).
+- Its tooltip today: "Internal name: X / Label: Y / Description:
+  <Label2>" (ExpressionCompleter.cpp 610-626). The omni rows' grey
+  description line exists (OmniSearchBox.cpp 89-165, DescriptionRole),
+  but the object completer's rows have NONE today ("a row without a
+  description (the object completer's) is one line high", line 160).
+NOT said: a. whether the one-row change is for OMNI SEARCH only or the
+expression editors' completer too (the same class); b. "the object usual
+description field content" -- the object's Description property
+(Label2), or something else (type, document); c. /error's reach -- all
+open documents, or the active one; and whether an object whose error
+is cleared drops out of an open list at once; d. which wins when the
+typing matches BOTH an internal name and a different object's label;
+e. the description when the label equals the name -- the usual
+description alone, by the note-taker's reading.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -22143,5 +22201,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 164
+the build session, 131 and 132 found by it; entries 134 to 165
 are of 2026-10-15, 134 said to the build session)
