@@ -13749,6 +13749,26 @@ Document::ImportResult Document::importFork(const std::string& path, const std::
     return result;
 }
 
+namespace
+{
+
+/// The row of a sent file whose blob the store holds (sec 30.29).
+int64_t keptSentFile(Document& doc, const FileBlobHandle& blob, const std::string& file,
+                     uint64_t size, const std::string& sender, const std::string& senderKind)
+{
+    nlohmann::json j;
+    j["request"] = {{"name", file},
+                    {"size", size},
+                    {"file", blob->hash()},
+                    {"sender", sender},
+                    {"kind", senderKind}};
+    const int64_t seq = doc.getTransactionLog()->keepFile(blob, file, j.dump());
+    doc.signalBranchesChanged(doc);
+    return seq;
+}
+
+}  // namespace
+
 int64_t Document::keepSentFile(const std::string& bytes, const std::string& name,
                                const std::string& sender, const std::string& senderKind)
 {
@@ -13766,16 +13786,31 @@ int64_t Document::keepSentFile(const std::string& bytes, const std::string& name
     FileBlobHandle blob = getFileBlobManager().adoptBytes(bytes, "FCStd");
     if (!blob)
         THROWM(Base::RuntimeError, "the file's store did not take " + file);
-    nlohmann::json j;
-    j["request"] = {{"name", file},
-                    {"size", bytes.size()},
-                    {"file", blob->hash()},
-                    {"sender", sender},
-                    {"kind", senderKind}};
-    const int64_t seq = log->keepFile(blob, file, j.dump());
-    signalBranchesChanged(*this);
-    return seq;
+    return keptSentFile(*this, blob, file, uint64_t(bytes.size()), sender, senderKind);
 }
+
+int64_t Document::keepSentFileAt(const std::string& path, const std::string& name,
+                                 const std::string& sender, const std::string& senderKind)
+{
+    // As keepSentFile(), the bytes never in memory: insertFile() copies the
+    // file into the store, which hashes it as it goes (sec 32.37).
+    checkNotFrozen("keep a sent file");
+    TransactionLog* log = getTransactionLog();
+    if (!log || log->detached())
+        THROWM(Base::RuntimeError, "the document keeps no log to hold a sent file in");
+    Base::FileInfo fi(path);
+    const uint64_t size = fi.exists() ? uint64_t(fi.size()) : 0;
+    if (size == 0)
+        THROWM(Base::ValueError, "an empty file");
+    std::string file = Base::FileInfo(name).fileName();
+    if (file.empty())
+        file = "sent.FCStd";
+    FileBlobHandle blob = getFileBlobManager().insertFile(path.c_str(), "FCStd");
+    if (!blob)
+        THROWM(Base::RuntimeError, "the file's store did not take " + file);
+    return keptSentFile(*this, blob, file, size, sender, senderKind);
+}
+
 
 std::vector<Document::SentFile> Document::sentFiles()
 {

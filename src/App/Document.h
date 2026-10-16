@@ -1040,6 +1040,12 @@ public:
     int64_t keepSentFile(const std::string& bytes, const std::string& name,
                          const std::string& sender = std::string(),
                          const std::string& senderKind = std::string());
+    /// The same for a file already on disk at `path`, copied into the
+    /// store without being read into memory: one that came in pieces
+    /// (docs/TransactionLog.md sec 32.37). `path` is left as it is.
+    int64_t keepSentFileAt(const std::string& path, const std::string& name,
+                           const std::string& sender = std::string(),
+                           const std::string& senderKind = std::string());
     /// The sent files the log holds, oldest first.
     std::vector<SentFile> sentFiles();
     /// Let the file of row `seq` go unread, with a record saying so. False
