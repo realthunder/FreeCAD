@@ -173,6 +173,11 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 18:43: NEW entry 168 (for discussion) -- telling the new format's
+risk while encouraging it for the transaction log; the new extension
+exists on `origin/Branding` (.TStd, a save beside the .FCStd); the
+note-taker's proposal under the entry.** Under the entry.
+
 **2026-10-16 18:38: on-screen test runs FREE until the reporter says
 otherwise ("Run on screen test freely from now on until I say otherwise");
 the reporter away from the desk.** Under entry 160.
@@ -3348,6 +3353,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 165 | 2026-10-16 | a change request: OMNI SEARCH -- (1) a new type /error filtering on ALL objects marked as RECOMPUTE ERROR; (2) the OBJECT LIST in the completer: ONE item per object, not separate name and label items; the label, as <<label>>, in the item's DESCRIPTION (and TOOLTIP) when it differs, leading, then the object's usual description; TAB completes to <<label>> (not the internal name) when the typing starts with << or matches a label that differs from the name; this completion for BOTH the unfiltered and the /error list | OPEN; read by the note-taker, nothing run: the object list is ExpressionCompleter's (OmniSearchBox.cpp 1037/1041), which lists a name row and a label row per object (ExpressionCompleter.cpp 262-270) and is SHARED with the expression editors. 18:05 ANSWERED: the EXPRESSION EDITORS too; /error over ALL OPEN DOCUMENTS; the list built per showing, no live refresh; a clash -- typing NOT led by << favours the LABEL, led by << favours the INTERNAL NAME (as said; the note-taker asks whether the two are the other way round). 18:10 ANSWERED b: "usual description" = what the expression editor's previous build showed as the object's TOOLTIP (internal name, label, Description/Label2 -- ExpressionCompleter.cpp 610-626) |
 | 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt. 18:04 the build session: the SAME four warnings, TWICE, in the FIRST recompute after a FRESH HEADLESS open of a scanner copy (r86, ~17:40, no revert) -- so NOT the revert's doing; the reporter's GUI first open at 17:36 printed NONE (the note-taker re-checked the live copy: all 8 lines are after the revert); why the GUI first open is silent not known. 18:10 ANSWERED: the recompute after the revert BY HAND; NOTHING looked wrong |
 | 167 | 2026-10-16 | a defect (CRITICAL by the reporter's word): `scanner.FCStd` was SAVED, "someone (not me)"; check whether there is a transaction log inside; find new code that may cause it | OPEN; READ by the note-taker (the file and the reporter's console logs, read only): saved 18:06:52 (LastModifiedDate 10:06:52Z), schema 4 -> 5, 9.2 MB; it HOLDS a history (blobs/History.db, zstd): ONE session, the reporter's own staged FreeCAD (build hash b076aae675) opened 17:36:03, ONE save at txn 21 (18:06:52); the file was still schema 4 at the revert's read 17:59:07, so ONE save, not several; nothing in the console at 18:06:52; NO code found that saves unasked. 18:18 the 18:06:05 step READ: ONE op, a VIEW property ShowFrames set (a TechDraw page's frames toggled), 47 s before the save; no TechDraw code that saves found. 18:19 the build session (read only): NO save call added in src since 10-13 except tests; its probes open COPIES headless (FreeCADCmd) and none ran at 18:06; the session's "closed" time is written when the log is copied into the saved file, not a close -> the trigger is a SAVE ACTION in the GUI between 18:06:05 and 18:06:52; the question to the reporter: what was done in those 47 s, which window was active, did a box appear. 18:27 the PRE-SAVE content is NOT LOST: byte-identical (md5 bb568db2683b3acc217d534249778cfd, 6119171 bytes) to scanner.20261006-091732.FCBak beside it and to the build session's probe copy of 17:39 -- checked by the note-taker; the build session's 160 probes use the pre-save copy from now on. 18:33 the reporter: does NOT remember hitting any save button or anything, and saw NO format warning box; the note-taker READ: by design (the reporter's own rule of 2026-09-28) the old format is told ONCE, at the open, in the report view; a plain save then writes schema 5 with NO box -- so no box does not rule out a plain save |
+| 168 | 2026-10-16 | a change request FOR DISCUSSION: how to let the user know the RISK of saving in the NEW format, and yet ENCOURAGE it for the transaction log; eventually a NEW EXTENSION for the new format -- "one of the branch already did that" | OPEN, a discussion; the branch is `origin/Branding` (5 commits beyond LinkVibe, 10-14, not merged): schema 5 = .TStd; a plain save of an opened .FCStd writes Part.TStd BESIDE it and leaves the .FCStd as it was, with one dialog -- by the note-taker's reading it would have spared entry 167's overwrite; the note-taker's proposal under the entry |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -22484,6 +22490,67 @@ defect of its own -- a key or command routed to Save (an MDI view's
 script; a trace on the staged copy (a stack at Document::save) would
 catch the next one.
 
+## 168. Telling the user the new format's risk while encouraging it for the transaction log; a new extension (a change request, for discussion) -- OPEN
+
+**2026-10-16 18:43, the reporter:** "New request, and i need  discussion. How
+to let user know the risk of saving new format and yet encourage them to
+do that because of the transaction log function. Note that eventually we
+will use a new extension for the new format. Actually, one of the branch
+already did that."
+**What exists, READ in git, nothing run:**
+- Today on LinkVibe: an old-format (.FCStd, schema 4) file is raised to
+  schema 5 AT THE OPEN, and told ONCE, as a report-view WARNING; a plain
+  save then writes schema 5 over the .FCStd SILENTLY (App Document.cpp
+  2830-2846; Gui `offerSchemaUpgrade` skips it; the reporter's rule of
+  2026-09-28, TransactionLog.md sec 27.62). Entry 167 is that case: the
+  reporter saw no box, and scanner.FCStd was overwritten in schema 5.
+- The branch: `origin/Branding`, 5 commits beyond LinkVibe (10-14, NOT
+  merged): `919883c008` (App: schema 5 is a .TStd -- "the brand initial
+  plus Std"; a plain save that would raise a standard file writes
+  Part.TStd BESIDE Part.FCStd, leaves the original as it was, and the
+  document lives at Part.TStd from then on -- "user ruling 2026-10-14";
+  backups .TBak beside a .TStd; links not redirected; .TStd opens
+  wherever .FCStd does), `67ce120c62` (Gui: one warning dialog at that
+  save -- "Saved as Part.TStd." / Part.FCStd unchanged / the new format
+  does not open in other FreeCAD versions / Save As with the standard
+  format updates Part.FCStd; Save As's name follows the
+  Standard/Compact toggle), `a7896651de` (XDG: the .tstd type),
+  `2f606b90df` (docs/RenameInventory.md), `fdba0e5770` (a Part test).
+**The note-taker's proposal (asked for discussion; mine, not decided):**
+1. Make the upgrade NON-DESTRUCTIVE first -- the Branding branch's
+   save-beside. With the original .FCStd never overwritten, the risk to
+   tell shrinks to "other FreeCAD versions cannot open the new file",
+   and the message can be an OFFER rather than a warning. (Entry 167's
+   harm would not have happened.)
+2. Tell it WHERE IT IS SEEN, not only in the report view: a non-modal
+   BAR across the document's view at the open of an old-format file
+   (the way a browser or an office suite says "compatibility mode"),
+   e.g. "scanner.FCStd is in the standard format. Saving keeps it and
+   writes scanner.TStd beside it, with its history. [Keep history
+   (recommended)] [Keep the standard format] [What is this?]". It stays
+   until answered, never blocks work, and the answer is remembered per
+   document.
+3. ENCOURAGE by showing what is GAINED, in the bar and the save box,
+   concretely: undo and redo across sessions, crash recovery from the
+   log, the history panel and its versions, merging branches. Where a
+   feature needs the log on a standard-format document, say so at the
+   feature ("History is kept once the document is saved as .TStd")
+   instead of hiding it.
+4. ONE box at the FIRST save only (the branch's), with "do not show
+   again"; Save All the same once for all the documents it raises.
+5. Keep the WAY BACK obvious: Save As > Standard format, and a "Save a
+   standard copy" for sharing; the .TStd's save could offer "also keep
+   the .FCStd up to date" for users who share files with upstream.
+6. A preference for opened old files: ask (default) / always the new
+   format / always the standard one; new documents default to the new
+   format.
+NOT said: a. whether the Branding branch's behaviour (save-beside, the
+.TStd name, one box) is the base to merge, or a new design; b. whether
+the bar, the box or both; c. what the new format must NOT lose for a
+user who shares .FCStd files (a both-files mode, an export); d. whether
+the history (transaction log) can run on a standard-format document at
+all, or only on .TStd -- the "encourage" depends on it.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -22495,5 +22562,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 167
+the build session, 131 and 132 found by it; entries 134 to 168
 are of 2026-10-15, 134 said to the build session)
