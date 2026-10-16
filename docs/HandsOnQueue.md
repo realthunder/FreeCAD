@@ -168,6 +168,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 09:57: entry 153 ANSWERED -- the default 300 ms, only the default,
+the restart logic kept.** Under the entry; the reporter's own user.cfg
+holds 1000.
+
 **2026-10-16 09:53: entry 155 -- anything non-transparent takes the click; a
 HIDDEN FRAME takes NONE (reverses entry 149's band along a hidden
 frame).** Under the entry.
@@ -3115,7 +3119,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet. FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58), as described at 16:57. DONE 21:26 (build session): `c9417fada7`, LOCAL, not pushed, not staged |
 | 151 | 2026-10-16 | a defect: opening `scanner.FCStd` NOW, NONE of the TechDraw EDGES or FACES can be selected; DIMENSIONS can (by line or label); rendered under QT, NONE of the faces or edges are even DRAWN | OPEN; by the note-taker's reading on the copy staged 09:01 (`78fdeb4689`), a regression of the TechDraw picking work (entries 148, 149). ANSWERED 09:44: only on FIRST LOADING the document -- after switching to another page it works, and Page009 works too after switching back |
 | 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN |
-| 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix |
+| 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix. ANSWERED 09:57: 300 ms; ONLY the DEFAULT changes; the timer RESTARTS on each turn as now (current logic kept) |
 | 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN. ANSWERED 09:50: the LATEST STAGED copy (`78fdeb4689`); a view IN A PROJECTION GROUP; before -- not sure |
 | 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too. ANSWERED 09:51: EVERY VIEW; the rule: wherever an area is RENDERED TRANSPARENT, the click goes THROUGH. ANSWERED 09:53: ANYTHING NON-TRANSPARENT registers a click; a HIDDEN FRAME does NOT (reverses entry 149's band along a hidden frame) |
 
@@ -20783,7 +20787,7 @@ READ in the source, nothing run: `src/Mod/PartDesign/Gui/Workbench.cpp`
 `src/Gui/TaskView/TaskView.cpp` 1485 (`updateWatcher()`, a 200 ms timer)
 and 1123 (`showForActiveView()`).
 
-## 153. Shorten the overlay's wheel capture timeout: zoom, then the tree's wheel still zooms too long (a change request) -- OPEN
+## 153. Shorten the overlay's wheel capture timeout: zoom, then the tree's wheel still zooms too long (a change request) -- OPEN; ANSWERED 09:57 -- the default 300 ms, the logic kept
 
 **2026-10-16 09:42, the reporter:** "new request, reduce wheel capture timeout,
 because zooming with wheel, then move mouse to tree to scroll with wheel
@@ -20814,6 +20818,18 @@ default, "Delay mouse wheel pass through (ms)", 0 to 99999;
 `src/Gui/OverlayManager.cpp` 2139 and 2176 -- EVERY wheel event sets the
 delay again to now + that value (so it runs 1000 ms from the LAST turn);
 `%APPDATA%\FreeCAD\user.cfg` line 812 -- `DockOverlayWheelDelay` = 1000.
+
+**2026-10-16 09:57, the reporter answers a to c:** "entry 153 make it 300. only
+change the default. timer should restart, keep the current logic"
+The note-taker's reading: a -- 300 ms; b -- ONLY the DEFAULT of
+`DockOverlayWheelDelay` changes (1000 -> 300); c -- every wheel turn
+restarts the delay, as the source does now; nothing else changes.
+The note-taker's note: the reporter's own `user.cfg` holds
+`DockOverlayWheelDelay` = 1000 written out (line 812), so by the
+note-taker's reading a new default does NOT reach the reporter's copy --
+they keep 1000 until the setting is changed by hand. NOT checked whether
+the value is written only when changed; NOT said what the reporter wants
+for their own copy.
 
 ## 154. TechDraw: dragging a view leaves its geometry behind until release, under bgfx only (a defect) -- OPEN; ANSWERED 09:50 -- the 09:01 stage, a projection group
 
