@@ -22935,6 +22935,14 @@ staged copy a copy/paste or a binder copy from a document saved at schema
 file carries such a loss is NOT checked. Shapes are made again by a
 recompute; an included file (a texture, a material file) is not.
 
+**2026-10-17 02:05, the build session (relayed):** the correction ACCEPTED, checked --
+`294697011c` (2026-10-16 20:59) is local and NOT in the staged
+54b5805b13; its "nothing was lost while the source stayed open" was
+wrong. In the staged copy every copy from a document whose last save used
+schema 5 drops those files and prints "Included file ... is missing".
+Whether a saved user file carries such a loss is not checked. The r100
+export fix removes the cause; the fallback stays as a warned safety net.
+
 ## 167. scanner.FCStd saved by "someone (not me)" (a defect, critical by the reporter) -- OPEN
 
 **2026-10-16 about 18:10, the reporter:** "I just found out one critical fact.
