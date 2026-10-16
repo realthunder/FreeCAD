@@ -168,6 +168,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 10:52: entry 159 RULED -- way B (the handles stay in the editing
+root, the edit capture gets an outline); A rejected, it defeats per-view
+edit.** Under the entry.
+
 **2026-10-16 10:44: entry 159 -- asked to check whether a handle can get the
 outline by routing special element names in getDetailPath /
 getElementPicked: the names yes (Sketcher's precedent), but the handles
@@ -3184,7 +3188,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels |
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed. 10:22: the timer's sync must NOT AUTO-SCROLL the tree; the reporter ASKS the note-taker to elaborate the edit-session exception -- elaborated under the entry, a question back (SyncView into a view in an edit) |
 | 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more |
-| 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too. 10:44: the reporter -- the outline needs getDetailPath / getPickedElement to route a special element name to the handle's Coin node; "check if it's possible first" -- the note-taker's check (reading): the NAMES can be routed (Sketcher does), but the handles hang OUTSIDE the selection root whose render cache draws the outline, so naming alone does not reach it |
+| 159 | 2026-10-16 | a change request: PartDesign ON-VIEW EDIT -- a mouse click in the 3D view that registers NO new selection CLEARS the ACTIVE HANDLE selection; and a question: why the handle's (pre)selection does not follow the SILHOUETTE OUTLINE selection style as asked (entry 144) -- is it hard? | OPEN; the outline is 144's part NOT done ("wants the screen under D3D11", the build log). 10:41: the reporter CORRECTS the note-taker's answer -- the Coin render cache path (mode 3) can render the outline too. 10:44: the reporter -- the outline needs getDetailPath / getPickedElement to route a special element name to the handle's Coin node; "check if it's possible first" -- the note-taker's check (reading): the NAMES can be routed (Sketcher does), but the handles hang OUTSIDE the selection root whose render cache draws the outline, so naming alone does not reach it. 10:52 RULED: way B -- the handles stay in the editing root, the edit capture gets an outline (bgfx overlay highlight; a render cache for the Coin edit root); A rejected, it "defeats per view edit" |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -21416,6 +21420,20 @@ reading, NOT verified by a build):
       root drawn through a render cache of its own (new).
    A reuses what exists and is the shorter road by the note-taker's
    reading, with the drag cost the first thing to measure. NOT agreed.
+
+**2026-10-16 10:52, the reporter rules:** "A defeats per view edit. Go B"
+The note-taker's reading: way A (the handles moved into the edited view
+provider's nodes under the selection root) is REJECTED -- those nodes are
+the object's, shown in EVERY view, so the handles would leave the editing
+view's own session (per-view edit, `PerViewEdit`); the note-taker missed
+that, and its leaning to A is WITHDRAWN. Way B is the order: the handles
+stay in the view's EDITING ROOT; the edit capture gets an outline -- on
+bgfx an outline for the editing capture's highlight feed (paths of the
+handles through `setEditingHighlight`), on the Coin path the editing root
+drawn through a render cache of its own so the outline pass applies;
+plus the element-name routing (`getElementPicked` / `getDetailPath`) the
+reporter named at 10:44. NOT said: the order of work, and whether the
+sketcher's edit highlight takes the outline too (it uses the same feed).
 
 ## Inbox
 
