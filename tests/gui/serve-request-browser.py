@@ -1,6 +1,7 @@
-"""A real browser sends a copy larger than one message carries, in pieces.
+"""A real browser sends a copy larger than one message carries, in pieces,
+and goes on with it when its connection drops in the middle.
 
-The browser half of docs/TransactionLog.md sec 32.36.
+The browser half of docs/TransactionLog.md sec 32.36 and 32.37.
 scripts/transaction-log-request-check.py checks the ops -- `upload.begin`,
 `upload.piece`, the op naming the upload, and every refusal -- from the
 host's own Python. What it cannot check is the page (web/src/control.ts
@@ -10,14 +11,21 @@ got while it goes, and says it was sent at the end.
 
 So this serves a document under a share whose upload limit is raised past
 the file, serves the built viewer over HTTP, and lets Chrome pick a 60 MB
-file through scripts/request-drive.js. Asserted:
+file through scripts/request-drive.js. The page reaches the host through a
+TCP relay of this test's, which cuts every connection once a third of the
+file has come -- a network that dropped, which the viewer reconnects after,
+where a host's kick would tell it not to. Asserted:
 
   - the page has the row, and its alert says the file was sent;
   - while it went, the page said how far it had got, more than once, and
     ended at the whole; nothing of it is left on the page after;
   - the host has it waiting, unread, under the page's name, and its bytes
     are the file's;
-  - nothing of the pieces is held after.
+  - nothing of the pieces is held after;
+  - the connection was cut in the middle, the page said it was waiting for
+    it, and went on: what the page sent through the relay is the file once
+    and not much more, at the rate it went before the cut -- the pieces that
+    came before the cut did not travel again.
 
 Needs the built viewer (build/wasm/fcviewer.html; `ninja -C build/wasm`),
 node, a puppeteer-core install named by PUPPETEER_PATH, and a Chrome named
@@ -30,6 +38,7 @@ by CHROME. Skips rather than fails when any is missing.
 """
 import functools
 import hashlib
+import socket
 import http.server
 import json as jsonlib
 import os
@@ -60,7 +69,67 @@ RUN_WAIT_S = 300
 TOKEN = "request-browser-invite"
 CLIENT = "request-browser"
 
-state = {"doc": None, "done": False, "run": None, "t0": clock()}
+state = {"doc": None, "done": False, "run": None, "t0": clock(), "cut": None}
+
+
+class Relay(threading.Thread):
+    """A TCP relay between the page and the host, which can cut every
+    connection it carries -- and keeps taking new ones. Counts what the page
+    sent through it."""
+
+    def __init__(self, target):
+        super().__init__(daemon=True)
+        self.target = target
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server.bind(("127.0.0.1", 0))
+        self.server.listen(16)
+        self.port = self.server.getsockname()[1]
+        self.lock = threading.Lock()
+        self.open = []
+        self.up = 0
+        self.cuts = 0
+
+    def run(self):
+        while True:
+            try:
+                page, _ = self.server.accept()
+                host = socket.create_connection(("127.0.0.1", self.target))
+            except OSError:
+                return
+            with self.lock:
+                self.open += [page, host]
+            threading.Thread(target=self.pump, args=(page, host, True), daemon=True).start()
+            threading.Thread(target=self.pump, args=(host, page, False), daemon=True).start()
+
+    def pump(self, src, dst, upward):
+        try:
+            while True:
+                data = src.recv(1 << 16)
+                if not data:
+                    break
+                if upward:
+                    with self.lock:
+                        self.up += len(data)
+                dst.sendall(data)
+        except OSError:
+            pass
+        for s in (src, dst):
+            try:
+                s.close()
+            except OSError:
+                pass
+
+    def cut(self):
+        with self.lock:
+            sockets, self.open = self.open, []
+            self.cuts += 1
+        for s in sockets:
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+                s.close()
+            except OSError:
+                pass
 
 
 def note(msg):
@@ -186,10 +255,13 @@ def build():
             finish()
             return
         http_port = serve_viewer()
-        note("viewer on %d, scene on %d" % (http_port, port))
+        relay = Relay(port)
+        relay.start()
+        state["relay"] = relay
+        note("viewer on %d, scene on %d, relayed on %d" % (http_port, port, relay.port))
         FreeCADGui.serveSetGrants(wsclient.invitation(TOKEN, CLIENT))
         url = ("http://127.0.0.1:%d/fcviewer.html?scene=http://127.0.0.1:%d"
-               "&token=%s&client=%s" % (http_port, port, TOKEN, CLIENT))
+               "&token=%s&client=%s" % (http_port, relay.port, TOKEN, CLIENT))
         state["run"] = Run(url, sent)
         state["t0"] = clock()
         state["run"].start()
@@ -201,6 +273,16 @@ def build():
 
 def poll():
     run = state["run"]
+    # A third of it come: the network drops.
+    if state["cut"] is None:
+        count, held = FreeCADGui.serveUploads()
+        if count and held >= SIZE // 3:
+            state["cut"] = held
+            # What the relay carried per byte the host has, so far: the
+            # socket may deflate its messages, so base64's 4 for 3 is not it.
+            state["rate"] = state["relay"].up / float(held)
+            state["relay"].cut()
+            note("cut at %d bytes" % held)
     if run.is_alive():
         if clock() - state["t0"] > RUN_WAIT_S:
             check("the browser run finished", False, "still running after %ds" % RUN_WAIT_S)
@@ -247,6 +329,20 @@ def verify():
             check("its bytes are the file's", kept == state["sha"], (kept, state["sha"]))
         check("nothing of the pieces is held after", FreeCADGui.serveUploads() == (0, 0),
               FreeCADGui.serveUploads())
+        relay = state["relay"]
+        once = SIZE * state.get("rate", 4.0 / 3)
+        check("the connection was cut in the middle, and the page said it waited for it",
+              state["cut"] is not None and relay.cuts == 1
+              and any("waiting for the connection" in line for line in progress),
+              (state["cut"], [line for line in progress if "waiting" in line][:2]))
+        # Sent again from nothing would be a third more; a piece or two in
+        # flight at the cut may go twice.
+        piece = 4 * 1024 * 1024 * state.get("rate", 4.0 / 3)
+        check("what came before the cut did not travel again",
+              once * 0.95 <= relay.up < once + 2 * piece + 2 * 1024 * 1024,
+              ("sent %.1f MB through the relay, %.2f a byte up to the cut: the file "
+               "once is %.1f MB" % (relay.up / 1048576.0, state.get("rate", 0),
+                                    once / 1048576.0)))
     except Exception:
         note("FAIL verify:\n" + traceback.format_exc())
     finish()

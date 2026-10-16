@@ -4,7 +4,8 @@
 # sender, refused to a view-only connection, past the upload limit and past
 # what may wait -- then saved aside, brought in by the owner with the merge
 # or without, merged, and let go; a request that is a branch deleted. And a
-# file larger than one message carries, sent in pieces (sec 32.36).
+# file larger than one message carries, sent in pieces (sec 32.36), on
+# disk as they come and taken up again after a drop (sec 32.37).
 # One GUI run in a fresh user home, given this script at startup:
 #
 #   cd build/conda-relwithdebinfo-801
@@ -358,6 +359,59 @@ def run():
                   again.get("ok") is True and again.get("upload") != upload
                   and Gui.serveUploads() == (1, 0))
             control({"op": "upload.cancel", "upload": again.get("upload")})
+
+            # Sec 32.37: the pieces are on disk as they come, and a
+            # connection that dropped takes its upload up again.
+            pieces_dir = os.path.join(App.getTempPath(), "BrowserUploads.pieces")
+            begun = control({"op": "upload.begin", "size": len(large), "for": "requests.send"})
+            upload, token = begun.get("upload"), begun.get("resume")
+            part(0)
+            part(piece)
+            on_disk = os.path.join(pieces_dir, "%d.part" % upload)
+            check("resume: the pieces written to a file as they come, not held (%r)"
+                  % (os.path.getsize(on_disk) if os.path.isfile(on_disk) else None,),
+                  os.path.isfile(on_disk) and os.path.getsize(on_disk) == 2 * piece
+                  and Gui.serveUploads() == (1, 2 * piece) and len(token or "") == 32)
+            reply = control({"op": "upload.begin", "resume": "0" * 32}, 9)
+            check("resume: a token that is not its own takes nothing up (%r)"
+                  % reply.get("code"), reply.get("code") == "UnknownUpload")
+            reply = control({"op": "upload.begin", "resume": token}, 9, "view")
+            check("resume: not by a connection that may only look (%r)" % reply.get("code"),
+                  reply.get("ok") is False)
+            reply = control({"op": "upload.begin", "resume": token}, 9)
+            check("resume: taken up on the connection come back, where it stood (%r)"
+                  % (reply,),
+                  reply.get("ok") is True and reply.get("upload") == upload
+                  and reply.get("received") == 2 * piece and reply.get("size") == len(large)
+                  and Gui.serveUploads() == (1, 2 * piece))
+            reply = part(2 * piece)
+            check("resume: the connection it left knows it no more (%r)" % reply.get("code"),
+                  reply.get("code") == "UnknownUpload")
+            for at in range(2 * piece, len(large), piece):
+                reply = part(at, 9)
+            reply = control({"op": "requests.send", "name": "resumed.FCStd", "upload": upload},
+                            9)
+            check("resume: the rest sent from there, and taken whole (%r)" % (reply.get("size"),),
+                  reply.get("ok") is True and reply.get("size") == len(large)
+                  and Gui.serveUploads() == (0, 0) and not os.path.exists(on_disk))
+            resumed = reply.get("request")
+            aside = os.path.join(where, "resumed.FCStd")
+            QtCore.QMetaObject.invokeMethod(
+                dock, "saveRequestAs", QtCore.Qt.DirectConnection,
+                QtCore.Q_ARG("qulonglong", resumed), QtCore.Q_ARG(str, aside),
+            )
+            check("resume: its bytes the bytes sent",
+                  os.path.isfile(aside) and open(aside, "rb").read() == large)
+            if os.path.isfile(aside):
+                os.remove(aside)
+            Gui.serveDropRequest(resumed, doc.Name)
+            settle(100)
+            begun = control({"op": "upload.begin", "size": len(large), "for": "requests.send"})
+            on_disk = os.path.join(pieces_dir, "%d.part" % begun.get("upload"))
+            control({"op": "upload.cancel", "upload": begun.get("upload")})
+            check("resume: one let go takes its file with it",
+                  not os.path.exists(on_disk) and Gui.serveUploads() == (0, 0)
+                  and len(Gui.serveRequests()) == 1)
 
             # The panel's chooser takes a large file the same way.
             replies = pieces("widgets.upload", "large.ttf", large[:9 * 1024 * 1024])
