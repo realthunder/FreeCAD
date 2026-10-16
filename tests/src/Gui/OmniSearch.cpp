@@ -73,7 +73,7 @@ private Q_SLOTS:
         QCOMPARE(in.objectQuery, QStringLiteral("P"));
 
         // A keyword in full is the keyword
-        for (const char *full : {"/cmd", "/param"}) {
+        for (const char *full : {"/cmd", "/param", "/error"}) {
             in = parseInput(QString::fromLatin1(full));
             QCOMPARE(in.mode, Mode::Chooser);
             QVERIFY(!in.withObjects);
@@ -111,6 +111,16 @@ private Q_SLOTS:
         QCOMPARE(in.mode, Mode::Param);
         QCOMPARE(in.query, QString());
         QCOMPARE(in.offset, 7);
+
+        // the objects in error (docs/HandsOnQueue.md entry 165)
+        in = parseInput(QStringLiteral("/error <<Box"));
+        QCOMPARE(in.mode, Mode::Error);
+        QCOMPARE(in.query, QStringLiteral("<<Box"));
+        QCOMPARE(in.offset, 7);
+        in = parseInput(QStringLiteral("/err"));
+        QCOMPARE(in.mode, Mode::Chooser);
+        QVERIFY(in.withObjects);
+        QCOMPARE(in.objectQuery, QStringLiteral("err"));
 
         // no prefix: an object query as typed
         in = parseInput(QStringLiteral("Box.Length"));

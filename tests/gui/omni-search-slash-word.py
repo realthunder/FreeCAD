@@ -10,7 +10,7 @@ after the slash that was not a full prefix was the chooser, so '/Crate'
 listed nothing.
 
 Claims:
-  - '/' lists the three modes and no object;
+  - '/' lists the four modes and no object;
   - '/c' lists the /cmd mode and the object Crate, and not /param;
   - '/cmd' lists the /cmd mode alone;
   - Down and Tab on the Crate row of that list make the text '/Crate';
@@ -104,7 +104,8 @@ def run():
 
         typed("/")
         view, rows = chooser_rows()
-        check("'/' lists the three modes and no object", rows == ["/ ", "/cmd ", "/param "], rows)
+        check("'/' lists the four modes and no object",
+              rows == ["/ ", "/cmd ", "/param ", "/error "], rows)
 
         typed("/c")
         view, rows = chooser_rows()

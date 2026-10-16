@@ -52,6 +52,7 @@
 #include "BitmapFactory.h"
 #include "ExprParams.h"
 #include "CallTips.h"
+#include "OmniSearch.h"
 #include "ViewParams.h"
 #include "Widgets.h"
 
@@ -111,23 +112,24 @@ public:
     // the Info inside has both idx1 and idx2 as -1, and row() as the index to
     // the data.  struct RootData is used to access the data dynamically
     // without saving.  The content of the root data is arranged in the
-    // following order,
+    // following order, a document's label row only there when the label
+    // differs from the name. An object is one row whatever its label
+    // (docs/HandsOnQueue.md entry 165): whether that row inserts the
+    // internal name or the <<label>> is decided by what is typed, see
+    // ModelData::nameChoice(),
     //
     //      document 1 internal name
     //      document 1 label (label string are quoted using <<...>>)
     //      document 2 internal name
     //      document 2 label
     //      ...
-    //      internal name of object 1 in owner document
-    //      label of object 1 in owner document
-    //      internal name of object 2 in owner document
-    //      label of object 2 in owner document
+    //      object 1 in owner document
+    //      object 2 in owner document
     //      ...
     //      property 1 of owner object
     //      property 2 of owner object
     //      ...
-    //      internal name of sub-object 1 of owner object
-    //      label of sub-object 1 of owner object
+    //      sub-object 1 of owner object
     //      ...
     //      special 'fake' property named '.'
     //      ...
@@ -155,8 +157,7 @@ public:
     //
     //      Parent              Child
     //
-    //      Document            internal name of object 1 of the document
-    //                          label of object 1 of the document
+    //      Document            object 1 of the document
     //                          ...
     //
     //     (Pseudo)Property     ObjectIdentifier path 1 (obtained by Property::getPaths())
@@ -164,8 +165,7 @@ public:
     //                          Python attribute 1 (obtained by CallTipList::extratTips())
     //                          ...
     //
-    //     (Sub)Object          internal name sub-object 1 of the object
-    //                          label of sub-object 1 of the object
+    //     (Sub)Object          sub-object 1 of the object
     //                          ...
     //                          pseudo property 1 of the object
     //                          ...
@@ -259,8 +259,10 @@ public:
         return res;
     }
 
-    // A name/label pair collapses to the name alone when the label is the
-    // name: rows[i] is index*2 for the name, index*2+1 for the label.
+    // rows[i] is index*2 for the name, index*2+1 for the label. A document
+    // has its label row only when the label is not the name; an object
+    // never has one (docs/HandsOnQueue.md entry 165), its one row offers
+    // the label as well, see ModelData::nameChoice().
     static bool labelDiffers(const App::DocumentObject *obj) {
         return obj->Label.getStrValue() != obj->getNameInDocument();
     }
@@ -270,13 +272,14 @@ public:
     }
 
     template<class T>
-    static void buildNameRows(const std::vector<T*> &items, std::vector<int> &rows) {
+    static void buildNameRows(const std::vector<T*> &items, std::vector<int> &rows,
+                              bool labelRows) {
         rows.clear();
-        rows.reserve(items.size()*2);
+        rows.reserve(items.size()*(labelRows ? 2 : 1));
         int i = 0;
         for(auto item : items) {
             rows.push_back(i*2);
-            if(labelDiffers(item))
+            if(labelRows && labelDiffers(item))
                 rows.push_back(i*2+1);
             ++i;
         }
@@ -289,7 +292,8 @@ public:
         App::Document *doc;
         long objID;
         std::vector<std::string> outList;
-        // Rows over outList: index*2 the name, index*2+1 the label (when it differs)
+        // Rows over outList: index*2, one row per sub-object whatever its
+        // label (docs/HandsOnQueue.md entry 165)
         std::vector<int> outRows;
         std::vector<std::string> propList;
         QStringList propNameList;
@@ -333,8 +337,6 @@ public:
                         int i = (int)outList.size();
                         outList.push_back(std::move(sub));
                         outRows.push_back(i*2);
-                        if(labelDiffers(o))
-                            outRows.push_back(i*2+1);
                     }
                 }
             }
@@ -594,37 +596,143 @@ public:
             }
         }
 
+        // docs/HandsOnQueue.md entry 165: an object is one row, not a name
+        // row and a <<label>> row. Which of the two the row inserts, and
+        // the text the completer matches it on, follow what is typed at
+        // the row's level. A leading "<<" asks for a label: the label is
+        // inserted, unless the typing matches the internal name as well,
+        // where the name wins. Without it the label is inserted whenever
+        // the typing matches it -- a clash favours the label -- and the
+        // name otherwise. The match text carries both, so that either
+        // finds the row, and leads with the one the typing matches for the
+        // "Exact match" option. A component typed in full in front of a
+        // dot ("Box." or "<<My box>>.") is matched exactly -- QCompleter
+        // walks the levels above the last one that way -- and keeps the
+        // form it was typed in.
+        struct NameChoice {
+            // insert the <<Label>> rather than the internal name
+            bool label = false;
+            // the match text (Qt::EditRole); empty when the label is the name
+            QString match;
+        };
+
+        NameChoice nameChoice(App::DocumentObject *obj) const {
+            NameChoice res;
+            if(!obj || !obj->isAttachedToDocument() || !labelDiffers(obj))
+                return res;
+            const QString name = QString::fromUtf8(obj->getNameInDocument());
+            const QString label = QString::fromUtf8(obj->Label.getValue());
+            const QString quoted = QString::fromUtf8(quote(obj->Label.getStrValue()).c_str());
+
+            // The completer's own matching rule, which completionsFor()
+            // sets for a remote caller
+            Qt::CaseSensitivity cs = Qt::CaseInsensitive;
+            bool contains = true;
+            auto completer = qobject_cast<ExpressionCompleter*>(
+                    static_cast<const QObject*>(getModel())->parent());
+            if(completer) {
+                cs = completer->caseSensitivity();
+                contains = completer->filterMode().testFlag(Qt::MatchContains);
+            }
+
+            bool last = true;
+            QString typed = getModel()->typedComponent(mindex, &last);
+            if(typed.startsWith(QLatin1Char('.')))
+                typed.remove(0, 1);
+            const bool led = typed.startsWith(QLatin1Char('<'));
+
+            if(!led && typed.compare(name, cs) == 0) {
+                res.match = name;
+                res.label = last && (contains ? label.contains(typed, cs)
+                                              : label.startsWith(typed, cs));
+                return res;
+            }
+            if(led && typed.compare(quoted, cs) == 0) {
+                res.match = quoted;
+                res.label = true;
+                return res;
+            }
+
+            QString t = typed;
+            if(led) {
+                t.remove(0, t.startsWith(QLatin1String("<<")) ? 2 : 1);
+                if(t.endsWith(QLatin1String(">>")))
+                    t.chop(2);
+            }
+            // After "<<" a match starts where the text starts, as it did
+            // for the <<label>> rows before
+            auto matches = [&](const QString &s) {
+                if(t.isEmpty())
+                    return true;
+                return (led || !contains) ? s.startsWith(t, cs) : s.contains(t, cs);
+            };
+            const bool matchName = matches(name);
+            const bool matchLabel = matches(label);
+            if(t.isEmpty())
+                res.label = led;
+            else
+                res.label = led ? !matchName : matchLabel;
+            if(led) {
+                res.match = (matchLabel || !matchName)
+                    ? quoted + QLatin1Char(' ') + name
+                    : QStringLiteral("<<") + name + QLatin1Char(' ') + quoted;
+            } else {
+                res.match = (!contains && matchLabel && !matchName)
+                    ? label + QLatin1Char(' ') + name
+                    : name + QLatin1Char(' ') + quoted;
+            }
+            return res;
+        }
+
+        // The tooltip an object row has always had -- internal name, label,
+        // description -- led by the <<Label>> when it is not the name
+        // (docs/HandsOnQueue.md entry 165). oneLine joins its lines for the
+        // omni search's description line.
+        QString objToolTip(App::DocumentObject *obj, bool oneLine) const {
+            QString txt;
+            if(!obj)
+                txt = QObject::tr("Object not found!");
+            else {
+                if(obj->isAttachedToDocument() && labelDiffers(obj))
+                    txt = QString::fromUtf8(quote(obj->Label.getStrValue()).c_str())
+                        + QLatin1Char('\n');
+                if(getModel()->inList.count(obj))
+                    txt += QObject::tr("Warning! Cyclic reference may occur if you reference this object\n\n");
+                txt += QStringLiteral("%1: %2\n%3: %4").arg(
+                        QObject::tr("Internal name"), QString::fromUtf8(obj->getNameInDocument()),
+                        QObject::tr("Label"), QString::fromUtf8(obj->Label.getValue()));
+                if(obj->Label2.getStrValue().size()) {
+                    txt += QStringLiteral("\n%1: %2").arg(
+                            QObject::tr("Description"), QString::fromUtf8(obj->Label2.getValue()));
+                }
+            }
+            if(oneLine)
+                txt = txt.split(QLatin1Char('\n'), Qt::SkipEmptyParts).join(QStringLiteral("  "));
+            return txt;
+        }
+
         QVariant objData(App::DocumentObject *obj,
                 bool label, int role, bool local=false, bool sep=true) const
         {
             switch(role) {
             case Qt::UserRole:
-                return objName(obj, label, sep || local);
-            case Qt::EditRole:
-                return objName(obj, label, sep);
+                return objName(obj, label || nameChoice(obj).label, sep || local);
+            case Qt::EditRole: {
+                NameChoice choice = nameChoice(obj);
+                if(choice.match.isEmpty())
+                    return objName(obj, label, sep);
+                return (sep ? QStringLiteral(".") : QString()) + choice.match;
+            }
             case Qt::DisplayRole: {
                 QString name = objName(obj, label, local);
                 if(getModel()->inList.count(obj))
                     name += QObject::tr(" (Cyclic reference!)");
                 return name;
             }
-            case Qt::ToolTipRole: {
-                QString txt;
-                if(!obj)
-                    txt = QObject::tr("Object not found!");
-                else {
-                    if(getModel()->inList.count(obj))
-                        txt = QObject::tr("Warning! Cyclic reference may occur if you reference this object\n\n");
-                    txt += QStringLiteral("%1: %2\n%3: %4").arg(
-                            QObject::tr("Internal name"), QString::fromUtf8(obj->getNameInDocument()),
-                            QObject::tr("Label"), QString::fromUtf8(obj->Label.getValue()));
-                    if(obj->Label2.getStrValue().size()) {
-                        txt += QStringLiteral("\n%1: %2").arg(
-                                QObject::tr("Description"), QString::fromUtf8(obj->Label2.getValue()));
-                    }
-                }
-                return txt;
-            }
+            case Qt::ToolTipRole:
+                return objToolTip(obj, false);
+            case OmniSearch::DescriptionRole:
+                return objToolTip(obj, true);
             case Qt::DecorationRole: {
                 auto vp = Gui::Application::Instance
                     ? Gui::Application::Instance->getViewProvider(obj) : nullptr;
@@ -647,12 +755,19 @@ public:
         {
             if(obj && obj->isAttachedToDocument()
                     && sobj && sobj->isAttachedToDocument()
-                    && !label)
+                    && !label
+                    && (role == Qt::EditRole || role == Qt::UserRole))
             {
-                if(role == Qt::EditRole)
+                // One row whatever the label (docs/HandsOnQueue.md entry
+                // 165): a row that inserts the <<Label>> is objData()'s
+                NameChoice choice = nameChoice(sobj);
+                if(role == Qt::EditRole) {
+                    if(!choice.match.isEmpty())
+                        return choice.match;
                     return QStringLiteral("%1").arg(
                         QString::fromUtf8(sobj->getNameInDocument()));
-                else if(role == Qt::UserRole) {
+                }
+                else if(!choice.label) {
                     if (obj->getPropertyByName(sobj->getNameInDocument())) {
                         // sub object name clash with property, use special syntax for disambiguation
                         return QStringLiteral(".<<%1.>>").arg(
@@ -1951,14 +2066,15 @@ public:
         return rootInfo;
     }
 
-    // Root rows of the documents, and of the objects of a document: the
-    // name of each, and its label only when that differs. Cached until
-    // reset(), and rebuilt when the list changed size underneath.
+    // Root rows of the documents: the name of each, and its label only
+    // when that differs; and of the objects of a document: one row each
+    // (docs/HandsOnQueue.md entry 165). Cached until reset(), and rebuilt
+    // when the list changed size underneath.
     const std::vector<int> &documentRows() const {
         const auto &docs = App::GetApplication().getDocuments();
         if(docRowsSource != docs.size() || (docRows.empty() && !docs.empty())) {
             docRowsSource = docs.size();
-            buildNameRows(docs, docRows);
+            buildNameRows(docs, docRows, true);
         }
         return docRows;
     }
@@ -1968,9 +2084,27 @@ public:
         auto &entry = objRowsMap[doc];
         if(entry.first != objs.size() || (entry.second.empty() && !objs.empty())) {
             entry.first = objs.size();
-            buildNameRows(objs, entry.second);
+            buildNameRows(objs, entry.second, false);
         }
         return entry.second;
+    }
+
+    // What splitPath() last handed QCompleter: the component typed at each
+    // level of the tree, the root's first. An object row reads the one of
+    // its own level to decide between its name and its label
+    // (docs/HandsOnQueue.md entry 165, ModelData::nameChoice()).
+    QStringList typedPath;
+
+    // The component typed at the level of the rows under parentIndex; last
+    // says whether it is the one being typed, rather than one QCompleter
+    // walks through by exact match on its way to the last.
+    QString typedComponent(const QModelIndex &parentIndex, bool *last=nullptr) const {
+        int depth = 0;
+        for(QModelIndex idx = parentIndex; idx.isValid(); idx = parent(idx))
+            ++depth;
+        if(last)
+            *last = depth + 1 >= (int)typedPath.size();
+        return depth < (int)typedPath.size() ? typedPath[depth] : QString();
     }
 
     void reset(bool end=true) {
@@ -2163,6 +2297,9 @@ public:
         case Qt::ToolTipRole:
         case Qt::DecorationRole:
         case Qt::ForegroundRole:
+        // the omni search's second line of an object row
+        // (docs/HandsOnQueue.md entry 165)
+        case OmniSearch::DescriptionRole:
             break;
         default:
             return QVariant();
@@ -2413,10 +2550,18 @@ QString ExpressionCompleter::pathFromIndex ( const QModelIndex & index ) const
 
 QStringList ExpressionCompleter::splitPath ( const QString & input ) const
 {
+    // The model's object rows read the component typed at their level
+    // (docs/HandsOnQueue.md entry 165): every answer goes through here
+    auto typed = [this](const QStringList &l) {
+        if (auto m = dynamic_cast<ExpressionCompleterModel*>(model()))
+            m->typedPath = l;
+        return l;
+    };
+
     std::string path = input.toUtf8().constData();
     if(path.empty()) {
         FC_TRACE("split path empty");
-        return QStringList();
+        return typed(QStringList());
     }
 
     QStringList l;
@@ -2431,13 +2576,13 @@ QStringList ExpressionCompleter::splitPath ( const QString & input ) const
     } else if(path.back() == '#') {
         l << input;
         FC_TRACE("split path, " << path);
-        return l;
+        return typed(l);
     } else if (boost::ends_with(path, "#<<")) {
         l << input.mid(0,input.size()-2);
         l << QStringLiteral("<<");
         FC_TRACE("split path " << path
                 << " -> " << l.join(QStringLiteral("/")).toUtf8().constData());
-        return l;
+        return typed(l);
     }
 
     int retry = 0;
@@ -2513,7 +2658,7 @@ QStringList ExpressionCompleter::splitPath ( const QString & input ) const
 
             FC_TRACE("split path " << path
                     << " -> " << l.join(QStringLiteral("/")).toUtf8().constData());
-            return l;
+            return typed(l);
         }
         catch (const Base::Exception &e) {
             FC_TRACE("split path error: " << e.what());
@@ -2550,7 +2695,7 @@ QStringList ExpressionCompleter::splitPath ( const QString & input ) const
         l << input;
     FC_TRACE("split path bail out -> "
             << l.join(QStringLiteral("/")).toUtf8().constData());
-    return l;
+    return typed(l);
 }
 
 // Code below inspired by blog entry:

@@ -12,7 +12,7 @@ typed. Picking one carries it out again. They are kept in the user
 parameters, so from one session to the next.
 
 Claims:
-  - with nothing confirmed yet the box lists the three modes and no more;
+  - with nothing confirmed yet the box lists the modes and no more;
   - a command run from the box is listed the next time, by its title;
   - a parameter opened from the box is listed above it, and a property
     opened from the box above that: the newest first;
@@ -38,7 +38,7 @@ from PySide import QtCore, QtGui, QtWidgets
 OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "OmniRecent"
-MODES = ["/ ", "/cmd ", "/param "]
+MODES = ["/ ", "/cmd ", "/param ", "/error "]
 COMMAND = "Std_SelectAll"
 STORE = "User parameter:BaseApp/Preferences/OmniSearch/Recent"
 
@@ -97,7 +97,14 @@ def bring_up():
     # run beside other windows may never be given: say it as the box does
     if edit.text() != "/":
         typed(edit, "/")
-    return edit, popup()
+    found = popup()
+    if not found[1]:
+        fw = QtWidgets.QApplication.focusWidget()
+        note("NOTE no list as the box came up: text %r, focus %s %r, param panel %s, "
+             "property panel %s" % (edit.text(), fw.metaObject().className() if fw else None,
+                                    fw.objectName() if fw else None, shown("OmniParamPanel"),
+                                    shown("OmniPropertyPanel")))
+    return edit, found
 
 
 def typed(edit, text):
@@ -148,7 +155,7 @@ def run():
         title = FreeCADGui.Command.get(COMMAND).getInfo()["menuText"].replace("&", "")
 
         edit, (view, rows) = bring_up()
-        check("with nothing confirmed the box lists the three modes and no more",
+        check("with nothing confirmed the box lists the modes and no more",
               rows == MODES, rows)
 
         # a command, run from its own list
@@ -228,9 +235,9 @@ def run():
         check("picking the parameter's row opens its editor", shown("OmniParamPanel"))
         dismiss()
         edit, (view, rows) = bring_up()
-        pick(view, rows, "/Crate.Length")
+        listed = pick(view, rows, "/Crate.Length")
         check("picking the property's row puts its text in the box",
-              edit.text() == "/Crate.Length", edit.text())
+              edit.text() == "/Crate.Length", (edit.text(), "listed" if listed else rows))
         check("and opens its editor", shown("OmniPropertyPanel"))
         dismiss()
 

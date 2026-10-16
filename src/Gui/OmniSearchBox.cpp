@@ -157,7 +157,9 @@ public:
         return highlighted;
     }
 
-    // A row without a description (the object completer's) is one line high
+    // A row without a description is one line high. The object completer's
+    // rows have one since docs/HandsOnQueue.md entry 165 (the <<label>> and
+    // the old tooltip); its properties and the rest have none.
     QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
         int text = QFontMetrics(option.font).height();
@@ -737,6 +739,7 @@ OmniSearchEdit::OmniSearchEdit(QWidget *parent)
     setupCommands();
     setupParams();
     setupMembers();
+    setupErrors();
     connect(this, &QLineEdit::textEdited, this, &OmniSearchEdit::onTextEdited);
 }
 
@@ -748,6 +751,10 @@ static const int ChooserObjectRole = Qt::UserRole + 200;
 // and its key, see OmniSearch::RecentItem. Picking it is confirming it again.
 static const int ChooserRecentModeRole = Qt::UserRole + 201;
 static const int ChooserRecentKeyRole = Qt::UserRole + 202;
+// A row of the "/error" list: the document and the internal name of the
+// object in error (docs/HandsOnQueue.md entry 165)
+static const int ErrorDocumentRole = Qt::UserRole + 203;
+static const int ErrorObjectRole = Qt::UserRole + 204;
 
 void OmniSearchEdit::setupChooser()
 {
@@ -759,7 +766,7 @@ void OmniSearchEdit::setupChooser()
     chooser->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
     chooser->setCaseSensitivity(Qt::CaseInsensitive);
     // room for the modes and every recent item without scrolling
-    chooser->setMaxVisibleItems(3 + MaxRecentItems);
+    chooser->setMaxVisibleItems(4 + MaxRecentItems);
     makePopup(chooser);
     chooser->popup()->installEventFilter(this);
     connect(chooser, qOverload<const QModelIndex&>(&QCompleter::activated),
@@ -917,6 +924,7 @@ void OmniSearchEdit::fillChooser()
         {Mode::Object, "/", tr("Documents, objects, sub-objects and properties")},
         {Mode::Command, "/cmd", tr("Commands")},
         {Mode::Param, "/param", tr("Application parameters")},
+        {Mode::Error, "/error", tr("Objects in error")},
     };
     for (const auto &row : rows) {
         const QString prefix = QString::fromLatin1(modePrefix(row.mode));
@@ -948,7 +956,13 @@ void OmniSearchEdit::fillChooser()
         const QString full = QStringLiteral("/") + name;
         auto item = new QStandardItem(full);
         item->setData(name, TitleRole);
-        item->setData(i < details.size() ? details[i] : QString(), DescriptionRole);
+        // The tooltip on one line, as the object popup's description has it:
+        // the <<label>> first (docs/HandsOnQueue.md entry 165)
+        item->setData(i < details.size()
+                          ? details[i].split(QLatin1Char('\n'), Qt::SkipEmptyParts)
+                                .join(QStringLiteral("  "))
+                          : QString(),
+                      DescriptionRole);
         item->setData(full, SearchTextRole);
         item->setData(true, ChooserObjectRole);
         chooserModel->appendRow(item);
@@ -1022,11 +1036,138 @@ void OmniSearchEdit::setupMembers()
             });
 }
 
+/* "/error": "add a new type /error to filter on all objects marked as
+ * recompute error", over every open document (docs/HandsOnQueue.md entry
+ * 165). A keyword filter, as for commands and parameters, over a list made
+ * when the mode is entered and once per showing of the box -- "I assume the
+ * list is built per showing of the omni search. so no need to refresh the
+ * list".
+ */
+void OmniSearchEdit::setupErrors()
+{
+    errorModel = new QStandardItemModel(this);
+    errorFilter = new KeywordFilterModel(this);
+    errorFilter->setSourceModel(errorModel);
+    errorCompleter = new QCompleter(errorFilter, this);
+    errorCompleter->setWidget(this);
+    errorCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+    makePopup(errorCompleter);
+    errorCompleter->popup()->installEventFilter(this);
+    connect(errorCompleter, qOverload<const QModelIndex&>(&QCompleter::activated),
+            this, [this](const QModelIndex &index) {
+                // Return on the text it puts in: the Return that picked
+                // the row must not be taken for a second one. Set after,
+                // since the text put in clears the flag.
+                if (activateErrorRow(index, false))
+                    justActivated = true;
+            });
+}
+
+void OmniSearchEdit::fillErrors()
+{
+    errorsStale = false;
+    errorModel->clear();
+    App::Document *ownerDoc = owner() ? owner()->getDocument() : nullptr;
+    for (auto doc : App::GetApplication().getDocuments()) {
+        for (auto obj : doc->getObjects()) {
+            if (!obj || !obj->isAttachedToDocument() || !obj->isError())
+                continue;
+            const QString name = QString::fromUtf8(obj->getNameInDocument());
+            const QString docName = QString::fromUtf8(doc->getName());
+            const QString title = doc == ownerDoc ? name : docName + QLatin1Char('#') + name;
+            const QString status = QString::fromUtf8(obj->getStatusString());
+            // The <<label>> leads, as in the object completer's rows
+            QString label;
+            if (obj->Label.getStrValue() != obj->getNameInDocument())
+                label = QString::fromUtf8(App::quote(obj->Label.getStrValue()).c_str());
+            auto item = new QStandardItem(title);
+            item->setData(title, TitleRole);
+            item->setData(label.isEmpty() ? status : label + QStringLiteral("  ") + status,
+                          DescriptionRole);
+            item->setData(label.isEmpty() ? status : label + QLatin1Char('\n') + status,
+                          Qt::ToolTipRole);
+            item->setData(QStringList{name, label, docName,
+                                      QString::fromUtf8(doc->Label.getValue()), status}
+                              .join(QLatin1Char(' ')),
+                          SearchTextRole);
+            item->setData(docName, ErrorDocumentRole);
+            item->setData(name, ErrorObjectRole);
+            if (Application::Instance) {
+                if (auto vp = Application::Instance->getViewProvider(obj))
+                    item->setIcon(vp->getIcon());
+            }
+            errorModel->appendRow(item);
+        }
+    }
+    if (errorModel->rowCount())
+        return;
+    // Said, rather than an empty list that looks like a box that failed;
+    // no search text, so a keyword typed leaves it out
+    auto item = new QStandardItem(tr("No object in error"));
+    item->setData(item->text(), TitleRole);
+    item->setData(tr("No open document has an object marked with a recompute error"),
+                  DescriptionRole);
+    item->setData(false, IsActiveRole);
+    item->setData(QString(), SearchTextRole);
+    errorModel->appendRow(item);
+}
+
+bool OmniSearchEdit::activateErrorRow(const QModelIndex &index, bool tab)
+{
+    auto doc = App::GetApplication().getDocument(
+        index.data(ErrorDocumentRole).toString().toUtf8().constData());
+    auto obj = doc ? doc->getObject(index.data(ErrorObjectRole).toString().toUtf8().constData())
+                   : nullptr;
+    if (!obj || !obj->isAttachedToDocument())
+        return false;
+    // A path is read against an owner; with none (no object anywhere when
+    // the box opened) the object is its own
+    if (!owner())
+        setOwner(obj);
+
+    // The object completer's <<label>> rule (docs/HandsOnQueue.md entry
+    // 165) over what was typed after "/error ": a leading "<<" inserts the
+    // label unless the rest begins the internal name as well; without it
+    // the label is inserted whenever the typing is part of it.
+    const QString name = QString::fromUtf8(obj->getNameInDocument());
+    const QString label = QString::fromUtf8(obj->Label.getValue());
+    bool useLabel = false;
+    if (label != name) {
+        QString t = input.query.trimmed();
+        const bool led = t.startsWith(QLatin1Char('<'));
+        if (led) {
+            t.remove(0, t.startsWith(QLatin1String("<<")) ? 2 : 1);
+            if (t.endsWith(QLatin1String(">>")))
+                t.chop(2);
+        }
+        if (t.isEmpty())
+            useLabel = led;
+        else if (led)
+            useLabel = !name.startsWith(t, Qt::CaseInsensitive);
+        else
+            useLabel = label.contains(t, Qt::CaseInsensitive);
+    }
+    QString path = useLabel ? QString::fromUtf8(App::quote(obj->Label.getStrValue()).c_str())
+                            : name;
+    if (!owner() || doc != owner()->getDocument())
+        path = QString::fromUtf8(doc->getName()) + QLatin1Char('#') + path;
+
+    setInputText(QString::fromLatin1(modePrefix(Mode::Object)) + path);
+    if (tab)
+        return true;
+    hidePopups();
+    Q_EMIT enterPressed();
+    return true;
+}
+
 void OmniSearchEdit::setOwner(App::DocumentObject *owner)
 {
     if (owner && !owner->isAttachedToDocument())
         owner = nullptr;
     ownerObj = owner;
+    // Each opening of the box starts here: the "/error" list is made
+    // again the next time it is asked for (docs/HandsOnQueue.md entry 165)
+    errorsStale = true;
     if (objCompleter) {
         objCompleter->setDocumentObject(owner);
         listCompleter->setDocumentObject(owner);
@@ -1140,6 +1281,8 @@ QCompleter *OmniSearchEdit::activeCompleter() const
         return cmdCompleter;
     case Mode::Param:
         return paramCompleter;
+    case Mode::Error:
+        return errorCompleter;
     }
     return nullptr;
 }
@@ -1147,7 +1290,7 @@ QCompleter *OmniSearchEdit::activeCompleter() const
 bool OmniSearchEdit::popupVisible() const
 {
     for (auto c : {chooser, static_cast<QCompleter*>(objCompleter), cmdCompleter, paramCompleter,
-                   memberCompleter}) {
+                   memberCompleter, errorCompleter}) {
         if (c && c->popup()->isVisible())
             return true;
     }
@@ -1157,7 +1300,7 @@ bool OmniSearchEdit::popupVisible() const
 void OmniSearchEdit::hidePopups()
 {
     for (auto c : {chooser, static_cast<QCompleter*>(objCompleter), cmdCompleter, paramCompleter,
-                   memberCompleter}) {
+                   memberCompleter, errorCompleter}) {
         if (c)
             c->popup()->hide();
     }
@@ -1178,6 +1321,8 @@ int OmniSearchEdit::filteredRowCount() const
         return cmdFilter->rowCount();
     case Mode::Param:
         return paramFilter->rowCount();
+    case Mode::Error:
+        return errorFilter->rowCount();
     default:
         return 0;
     }
@@ -1190,6 +1335,8 @@ QModelIndex OmniSearchEdit::filteredRow(int row) const
         return cmdFilter->index(row, 0);
     case Mode::Param:
         return paramFilter->index(row, 0);
+    case Mode::Error:
+        return errorFilter->index(row, 0);
     default:
         return {};
     }
@@ -1259,6 +1406,17 @@ void OmniSearchEdit::onTextEdited(const QString &text)
             showListPopup(paramCompleter, popupRect());
         else
             paramCompleter->popup()->hide();
+        break;
+    case Mode::Error:
+        // Made on entering the mode and once per showing of the box, not
+        // at each key stroke (docs/HandsOnQueue.md entry 165)
+        if (changed || errorsStale)
+            fillErrors();
+        errorFilter->setKeywords(input.query);
+        if (errorFilter->rowCount())
+            showListPopup(errorCompleter, popupRect());
+        else
+            errorCompleter->popup()->hide();
         break;
     }
 }
@@ -1450,7 +1608,14 @@ bool OmniSearchEdit::chooseCurrentRow()
                 activateObject();
         }
         else {
-            completeObject(index.data(objCompleter->completionRole()).toString());
+            // The row's path, as moving the highlight onto it splices it:
+            // its match text carries both the name and the <<label>> of an
+            // object (docs/HandsOnQueue.md entry 165). Through QCompleter:
+            // the override is private in ExpressionCompleter.
+            auto proxy = qobject_cast<QAbstractProxyModel*>(popup->model());
+            const QCompleter *completer = objCompleter;
+            completeObject(proxy ? completer->pathFromIndex(proxy->mapToSource(index))
+                                 : index.data(objCompleter->completionRole()).toString());
             activateObject();
         }
         break;
@@ -1461,6 +1626,9 @@ bool OmniSearchEdit::chooseCurrentRow()
     case Mode::Param:
         if (auto info = ParamListModel::infoOf(index))
             Q_EMIT paramChosen(info);
+        break;
+    case Mode::Error:
+        activateErrorRow(index, true);
         break;
     }
     return true;
@@ -1942,6 +2110,10 @@ void OmniSearchBox::onEnterPressed()
     case Mode::Param:
         if (lineEdit->filteredRowCount() == 1)
             onParamChosen(ParamListModel::infoOf(lineEdit->filteredRow(0)));
+        break;
+    case Mode::Error:
+        if (lineEdit->filteredRowCount() == 1)
+            lineEdit->activateErrorRow(lineEdit->filteredRow(0), false);
         break;
     }
 }

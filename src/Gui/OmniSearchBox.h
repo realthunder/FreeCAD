@@ -54,10 +54,11 @@ class TreeWidget;
 
 /** The line edit of the omni search box.
  *
- * One edit, four completers: the mode chooser, the expression completer
- * for objects and properties, and keyword-filtered lists of commands and
- * parameters. The text's prefix picks which one answers a keystroke
- * (OmniSearch::parseInput); at most one popup is up at a time.
+ * One edit, several completers: the mode chooser, the expression completer
+ * for objects and properties, and keyword-filtered lists of commands,
+ * parameters and the objects in error. The text's prefix picks which one
+ * answers a keystroke (OmniSearch::parseInput); at most one popup is up at
+ * a time.
  */
 class GuiExport OmniSearchEdit : public QLineEdit
 {
@@ -100,6 +101,13 @@ public:
     int filteredRowCount() const;
     QModelIndex filteredRow(int row) const;
 
+    /** A row of the "/error" list picked: the text becomes the object's
+     * path in the objects mode ("/ Box", "/ Doc#<<My box>>"). With \a tab
+     * the typing goes on from there; otherwise it is Return on that text,
+     * which selects the object. False for a row that names no object.
+     */
+    bool activateErrorRow(const QModelIndex &index, bool tab);
+
 Q_SIGNALS:
     void modeChanged(OmniSearch::Mode mode);
     /// The object query names an object or a property
@@ -134,6 +142,8 @@ private:
     void setupCommands();
     void setupParams();
     void setupMembers();
+    void setupErrors();
+    void fillErrors();
     void runObjectQuery();
     void resolveObjectQuery();
     void completeObject(const QString &completion);
@@ -167,6 +177,12 @@ private:
     QCompleter *memberCompleter = nullptr;
     QStandardItemModel *memberModel = nullptr;
     KeywordFilterModel *memberFilter = nullptr;
+    // "/error": the objects of every open document in error, made once per
+    // showing of the box (docs/HandsOnQueue.md entry 165)
+    QCompleter *errorCompleter = nullptr;
+    QStandardItemModel *errorModel = nullptr;
+    KeywordFilterModel *errorFilter = nullptr;
+    bool errorsStale = true;
 
     bool completing = false;
     bool justActivated = false;

@@ -15,13 +15,14 @@ floating box.
 ## 1. Using it
 
 Press `/` with the 3D view or the tree focused. A box opens at the top centre
-of the active view with `/` already typed and three suggestions:
+of the active view with `/` already typed and four suggestions:
 
 | prefix    | mode      | what the rest of the line means                         |
 |-----------|-----------|---------------------------------------------------------|
 | `/ `      | objects   | a document, object, sub-object or property path         |
 | `/cmd `   | commands  | keywords over every registered command                  |
 | `/param ` | params    | keywords over every generated application parameter     |
+| `/error ` | errors    | keywords over the objects in error, every open document |
 
 Pick one (Enter, Tab or click) or type the prefix; the space ends it. Text
 that does not start with `/` is an object query as typed.
@@ -61,7 +62,8 @@ box only: the browser's has no such list.
 
 The space after the slash is optional for an object: a word that is not a
 keyword is an object query as it stands, so `/Box.Length` is `/ Box.Length`.
-The keywords are `cmd` and `param` (the browser viewer has `cmd` only). A
+The keywords are `cmd`, `param` and `error` (the browser viewer has `cmd`
+only). A
 keyword in full is the keyword -- `/cmd` shows that one mode, and an object
 called `cmd` is asked for with the space, `/ cmd`. The beginning of a keyword
 could be either, so both are listed: `/c` shows the `/cmd` mode and, after it,
@@ -96,9 +98,21 @@ to several -- and `.Height` edits that property on all of them at once, the
 way the property view edits a multi-selection (one `PropertyItem` over
 every property, one transaction, the panel titled "N objects . Height").
 The first selected object is also what full paths are parsed against.
-With nothing selected the dot lists nothing and resolves nothing. Where a
-label is the object's name the completer no longer offers the `<<name>>`
-row beside the name; a document behaves the same.
+With nothing selected the dot lists nothing and resolves nothing.
+
+An object is one row of the completer, whatever its label
+(`docs/HandsOnQueue.md` entry 165) -- in the box and in every expression
+editor alike. The row shows the internal name; where the label differs,
+the description line (the tooltip in an expression editor) leads with
+`<<Label>>`, followed by what the tooltip always said: internal name, label
+and description. The row is found by either name, and what it inserts
+follows the typing: text that begins with `<<` inserts the `<<Label>>`,
+unless what follows the `<<` begins the internal name as well, where the
+name wins; text without it inserts the `<<Label>>` whenever it matches the
+label (a clash favours the label), the internal name otherwise. Nothing
+typed yet inserts the name, a lone `<<` the label. A component already
+typed in full in front of a dot keeps the form it was typed in. A document
+still has a name row and, where the label differs, a `<<Label>>#` row.
 
 A `#` addresses a document, as in the expression grammar's `Doc#Box`,
 with two additions the grammar does not have. `#` alone is the document
@@ -160,6 +174,22 @@ or, for a parameter whose page widget the registry cannot describe, a basic
 one for its value type. Edits apply immediately (the generated observer
 classes refresh their caches, so the effect is visible at once); Reset
 removes the stored value so the default applies again.
+
+**Errors.** `/error ` lists every object marked with a recompute error
+(`DocumentObject::isError()`) in every open document
+(`docs/HandsOnQueue.md` entry 165): the object's icon, its name --
+`Doc#Name` for a document other than the one being searched -- and as the
+description its `<<Label>>`, where that differs, and the error text
+(`getStatusString()`). Keywords match the name, the label, the document's
+name and label and the error text. The list is made when the mode is
+entered and once per showing of the box, not refreshed while it shows; with
+no object in error it is one greyed row that says so. Picking a row puts
+the object's path into the objects mode -- `/ Box`, `/ Doc#<<My box>>`,
+the name or label chosen by the completer's rule above, over the text typed
+after `/error ` -- so the tree shows it: Tab leaves the typing there,
+Return or a click is Return on that text, which selects the object. Return
+with a single row left picks it. Nothing is kept among the recent items
+under this mode; the object picked is kept as an object.
 
 Esc and a click elsewhere work in two steps: with a popup up they close the
 popup and leave the box; without one they close the box, panel or no panel.
@@ -399,9 +429,13 @@ The line endings in this repository are frozen (`.gitattributes`), so check
 - A new parameter or proxy field: `params_utils.py` (`Param.registry_entry`,
   `ParamProxy.registry_fields`), then regenerate; `createParamEditor()` in
   `OmniSearch.cpp` maps the proxy name to a widget.
-- A new mode: `OmniSearch::Mode` + `modePrefix` + `parseInput`, a model with
-  the shared roles, a completer in `OmniSearchEdit`, and the box's reaction
-  to its activation.
+- A new mode: `OmniSearch::Mode` + `modePrefix` + `modeKeywords` +
+  `parseInput` (and `recentWord`, `nullptr` for a mode that stores nothing),
+  a model with the shared roles, a completer in `OmniSearchEdit` (its setup,
+  `activeCompleter`, `popupVisible`, `hidePopups`, `filteredRow*`,
+  `onTextEdited`, `chooseCurrentRow`), a row in `fillChooser` and one more
+  in the chooser's `setMaxVisibleItems`, and the box's reaction to its
+  activation (`onEnterPressed`). `/error` is the latest one done this way.
 
 ## 5. Tests
 

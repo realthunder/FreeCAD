@@ -67,6 +67,10 @@ enum class Mode {
     Command,
     /// "/param query": generated application parameters
     Param,
+    /** "/error query": the objects of every open document marked with a
+     * recompute error (docs/HandsOnQueue.md entry 165)
+     */
+    Error,
 };
 
 struct Input {
@@ -84,15 +88,15 @@ struct Input {
     QString objectQuery;
 };
 
-/// The prefix that selects a mode, "/ ", "/cmd " or "/param "
+/// The prefix that selects a mode, "/ ", "/cmd ", "/param " or "/error "
 GuiExport const char *modePrefix(Mode mode);
 
-/// The words that select a mode after the slash: "cmd", "param"
+/// The words that select a mode after the slash: "cmd", "param", "error"
 GuiExport const std::vector<const char*> &modeKeywords();
 
 /** Split the box's text into mode and query.
  *
- * Text starting with a full prefix ("/cmd ", "/param ", "/ ") is that
+ * Text starting with a full prefix ("/cmd ", "/param ", "/error ", "/ ") is that
  * mode. After the slash, a word that is no keyword is an object query
  * with no space needed ("/Box"); the space is how to ask for an object
  * whose name is a keyword ("/ cmd"). A keyword in full ("/cmd") is the
@@ -135,7 +139,8 @@ GuiExport std::vector<RecentItem> recentItems();
 
 /** Note an item as confirmed: it goes to the front of recentItems(), and
  * the copy of it further down, if there is one, goes. Nothing is noted for
- * Mode::Chooser or an empty key.
+ * Mode::Chooser, Mode::Error or an empty key: an error row is confirmed as
+ * the object it names, a Mode::Object item.
  */
 GuiExport void addRecentItem(Mode mode, const QString &key);
 

@@ -68,6 +68,8 @@ const char *OmniSearch::modePrefix(Mode mode)
         return "/cmd ";
     case Mode::Param:
         return "/param ";
+    case Mode::Error:
+        return "/error ";
     case Mode::Chooser:
         break;
     }
@@ -76,7 +78,7 @@ const char *OmniSearch::modePrefix(Mode mode)
 
 const std::vector<const char*> &OmniSearch::modeKeywords()
 {
-    static const std::vector<const char*> keywords{"cmd", "param"};
+    static const std::vector<const char*> keywords{"cmd", "param", "error"};
     return keywords;
 }
 
@@ -98,6 +100,9 @@ const char *recentWord(OmniSearch::Mode mode)
         return "cmd";
     case OmniSearch::Mode::Param:
         return "param";
+    // An error row is confirmed as the object it names, a Mode::Object
+    // item; nothing is stored under the error mode itself
+    case OmniSearch::Mode::Error:
     case OmniSearch::Mode::Chooser:
         break;
     }
@@ -168,7 +173,7 @@ OmniSearch::Input OmniSearch::parseInput(const QString &text)
         res.offset = 0;
         return res;
     }
-    for (Mode mode : {Mode::Command, Mode::Param, Mode::Object}) {
+    for (Mode mode : {Mode::Command, Mode::Param, Mode::Error, Mode::Object}) {
         QString prefix = QString::fromLatin1(modePrefix(mode));
         if (text.startsWith(prefix)) {
             res.mode = mode;
