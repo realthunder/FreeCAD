@@ -30,6 +30,13 @@ using namespace TechDrawGui;
 QGIViewCollection::QGIViewCollection()
 {
     setFlags(QGraphicsItem::ItemIsSelectable);
+    // setFlags() above dropped the ones QGIView set: a moved group then
+    // told nobody (itemChange()), and its X and Y were written only at the
+    // release -- under the backend's page layer, which places a view's
+    // lines by them, a dragged group's geometry stayed behind its frame
+    // and dimensions until then (docs/HandsOnQueue.md entry 154)
+    setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
+    setFlag(QGraphicsItem::ItemSendsScenePositionChanges, true);
 
     setHandlesChildEvents(false);
 
