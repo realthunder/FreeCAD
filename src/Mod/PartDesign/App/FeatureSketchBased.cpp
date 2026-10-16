@@ -99,6 +99,11 @@ ProfileBased::ProfileBased()
             "and planar face into line and plane.");
 
     ADD_PROPERTY_TYPE(_ProfileBasedVersion,(0),"Part Design",(App::PropertyType)(App::Prop_Hidden), 0);
+    // (outputs: set when an older file is restored, which is no edit)
+    ADD_PROPERTY_TYPE(_FitRule,(0),"Part Design",
+                      (App::PropertyType)(App::Prop_Hidden | App::Prop_Output), 0);
+    ADD_PROPERTY_TYPE(_FitFlip,(false),"Part Design",
+                      (App::PropertyType)(App::Prop_Hidden | App::Prop_Output), 0);
 }
 
 short ProfileBased::mustExecute() const
@@ -117,6 +122,61 @@ void ProfileBased::setupObject()
     AllowMultiFace.setValue(true);
     Linearize.setValue(Part::PartParams::getLinearizeExtrusionDraft());
     _ProfileBasedVersion.setValue(2);
+    _FitRule.setValue(1);
+}
+
+void ProfileBased::onDocumentRestored()
+{
+    FeatureAddSub::onDocumentRestored();
+    if (_FitRule.getValue() >= 1)
+        return;
+    // Made before the rule: Fit ran with the profile face as its solid had
+    // it, and the side it made is the one the file holds. Kept, whatever
+    // the solid's next recompute hands back (docs/HandsOnQueue.md entry
+    // 160, Pocket040 in scanner.FCStd). The profile's shape is the file's
+    // now, before any recompute.
+    _FitRule.setValue(1);
+    if (std::abs(Fit.getValue()) <= Precision::Confusion()
+            && std::abs(InnerFit.getValue()) <= Precision::Confusion())
+        return;
+    try {
+        TopoShape face = getVerifiedFace(/*silent*/true, /*doFit*/false, /*allowOpen*/true);
+        TopExp_Explorer exp(face.getShape(), TopAbs_FACE);
+        if (exp.More())
+            _FitFlip.setValue(exp.Current().Orientation() == TopAbs_REVERSED);
+    }
+    catch (Base::Exception &) {
+    }
+    catch (Standard_Failure &) {
+    }
+}
+
+/// \a shape with each of its faces forward: an offset runs by the face's
+/// orientation, and a sketch's faces are made forward
+static TopoShape forwardFaces(const TopoShape &shape)
+{
+    if (shape.isNull())
+        return shape;
+    if (shape.shapeType(true) == TopAbs_FACE) {
+        if (shape.getShape().Orientation() != TopAbs_REVERSED)
+            return shape;
+        TopoShape res(shape);
+        res.setShape(shape.getShape().Oriented(TopAbs_FORWARD), false);
+        return res;
+    }
+    bool any = false;
+    std::vector<TopoShape> faces = shape.getSubTopoShapes(TopAbs_FACE);
+    for (auto &face : faces) {
+        if (face.getShape().Orientation() == TopAbs_REVERSED) {
+            face.setShape(face.getShape().Oriented(TopAbs_FORWARD), false);
+            any = true;
+        }
+    }
+    if (!any)
+        return shape;
+    TopoShape res(shape.Tag, shape.Hasher);
+    res.makECompound(faces);
+    return res;
 }
 
 TopLoc_Location ProfileBased::positionByPrevious(void)
@@ -297,9 +357,17 @@ TopoShape ProfileBased::getVerifiedFace(bool silent,
         if (doFit && (std::abs(Fit.getValue()) > Precision::Confusion()
                       || std::abs(InnerFit.getValue()) > Precision::Confusion())) {
 
+            // Each face forward, as a sketch's is: the offset runs by the
+            // face's orientation, which a boolean may hand back either way
+            // for the very same face -- a recompute that moved a base by
+            // 1e-6 gave Hole007's Face56 in scanner.FCStd back forward, and
+            // Pocket040's Fit of -0.5 shrank the profile it had grown
+            // (docs/HandsOnQueue.md entry 160). An older feature runs as its
+            // file made it (_FitFlip).
+            const double sign = _FitFlip.getValue() ? -1.0 : 1.0;
             if (!shape.isNull())
-                shape = shape.makEOffsetFace(Fit.getValue(),
-                                            InnerFit.getValue(),
+                shape = forwardFaces(shape).makEOffsetFace(sign * Fit.getValue(),
+                                            sign * InnerFit.getValue(),
                                             static_cast<Part::TopoShape::JoinType>(FitJoin.getValue()),
                                             static_cast<Part::TopoShape::JoinType>(InnerFitJoin.getValue()));
             if (!openshape.isNull())

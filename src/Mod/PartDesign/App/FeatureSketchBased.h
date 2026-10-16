@@ -76,6 +76,13 @@ public:
     App::PropertyBool        Linearize;
 
     App::PropertyInteger _ProfileBasedVersion;
+    /// How Fit reads a profile face: 0, as the solid it came from had the
+    /// face (the face's own orientation); 1, as a sketch's face, whatever
+    /// the solid did (getVerifiedFace(), docs/HandsOnQueue.md entry 160)
+    App::PropertyInteger _FitRule;
+    /// Fit and InnerFit run the other way: an older feature whose profile
+    /// face was reversed in its file, which its Fit ran with
+    App::PropertyBool    _FitFlip;
 
     short mustExecute() const override;
 
@@ -238,6 +245,8 @@ protected:
                  Base::Vector3d& base, Base::Vector3d& dir, ForbiddenAxis checkAxis) const;
 
     void onChanged(const App::Property* prop) override;
+    /// An older feature's Fit keeps the side its file made (_FitRule)
+    void onDocumentRestored() override;
 private:
     bool isParallelPlane(const TopoDS_Shape&, const TopoDS_Shape&) const;
     bool isEqualGeometry(const TopoDS_Shape&, const TopoDS_Shape&) const;

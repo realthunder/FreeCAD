@@ -378,6 +378,46 @@ class TestPocket(unittest.TestCase):
         self.Doc.recompute()
         self.assertIn('Invalid', self.Pocket.State)
 
+    def testFitOnAReversedFaceProfile(self):
+        # entry 160 (scanner.FCStd, Pocket040): a profile face's Fit ran by
+        # the face's orientation, which a boolean may hand back either way.
+        # A new feature takes the face forward, as a sketch's: a negative Fit
+        # shrinks. An older one keeps the side its file made: the face was
+        # reversed there, and its -0.5 grew the profile.
+        import os
+        import tempfile
+
+        body = self.Doc.addObject('PartDesign::Body', 'FitBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'FitBox')
+        self.Doc.recompute()
+        reversed_faces = ['Face%d' % (i + 1) for i, f in enumerate(box.Shape.Faces)
+                          if f.Orientation == 'Reversed' and f.Surface.TypeId == 'Part::GeomPlane']
+        if not reversed_faces:
+            self.skipTest('the box has no reversed face')
+        pocket = body.newObject('PartDesign::Pocket', 'FitPocket')
+        pocket.Profile = (box, [reversed_faces[0]])
+        pocket.Length = 2
+        pocket.Fit = -0.5
+        self.Doc.recompute()
+        self.assertEqual(pocket._FitRule, 1)
+        self.assertFalse(pocket._FitFlip)
+        # the 10 by 10 face shrunk to 9 by 9, 2 deep
+        self.assertAlmostEqual(pocket.AddSubShape.Volume, 9 * 9 * 2, places=3)
+
+        # as a feature from before the rule: its file decides
+        pocket._FitRule = 0
+        path = os.path.join(tempfile.mkdtemp(), 'PartDesignTestPocket.FCStd')
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        pocket = self.Doc.getObject('FitPocket')
+        self.assertEqual(pocket._FitRule, 1)
+        self.assertTrue(pocket._FitFlip)
+        pocket.touch()
+        self.Doc.recompute()
+        # grown by 0.5 all round, the corners rounded: more than 10 by 10
+        self.assertGreater(pocket.AddSubShape.Volume, 10 * 10 * 2)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPocket")
