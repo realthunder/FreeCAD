@@ -245,15 +245,15 @@ def wheel_goes_on(tab, tree, row):
     before = camera_height()
     notch(middle)
     # the view zooms a moment after the notch; well inside the wheel's
-    # delay of 1 s
-    settle(250)
+    # delay of 300 ms (DockOverlayWheelDelay's default since entry 153)
+    settle(100)
     started = camera_height()
     for i in range(3):
-        # moving onto the row while the wheel goes on, a notch every 250 ms
+        # moving onto the row while the wheel goes on, a notch every 100 ms
         t = (i + 1) / 3.0
         notch(QtCore.QPoint(int(middle.x() + (spot.x() - middle.x()) * t),
                             int(middle.y() + (spot.y() - middle.y()) * t)))
-        settle(250)
+        settle(100)
     after = camera_height()
     check("entry 150: the wheel begun over the view zooms it", abs(started - before) > 1e-6 * abs(before),
           "%.4f -> %.4f" % (before, started))

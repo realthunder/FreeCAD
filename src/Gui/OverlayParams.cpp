@@ -95,7 +95,7 @@ public:
         funcs["DockOverlayAutoMouseThrough"] = &OverlayParamsP::updateDockOverlayAutoMouseThrough;
         DockOverlayWheelPassThrough = this->handle->GetBool("DockOverlayWheelPassThrough", true);
         funcs["DockOverlayWheelPassThrough"] = &OverlayParamsP::updateDockOverlayWheelPassThrough;
-        DockOverlayWheelDelay = this->handle->GetInt("DockOverlayWheelDelay", 1000);
+        DockOverlayWheelDelay = this->handle->GetInt("DockOverlayWheelDelay", 300);
         funcs["DockOverlayWheelDelay"] = &OverlayParamsP::updateDockOverlayWheelDelay;
         DockOverlayAlphaRadius = this->handle->GetInt("DockOverlayAlphaRadius", 2);
         funcs["DockOverlayAlphaRadius"] = &OverlayParamsP::updateDockOverlayAlphaRadius;
@@ -197,7 +197,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDockOverlayWheelDelay(OverlayParamsP *self) {
-        self->DockOverlayWheelDelay = self->handle->GetInt("DockOverlayWheelDelay", 1000);
+        self->DockOverlayWheelDelay = self->handle->GetInt("DockOverlayWheelDelay", 300);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDockOverlayAlphaRadius(OverlayParamsP *self) {
@@ -350,7 +350,7 @@ static const App::ParamRegistry::Registrar _OverlayParamsRegistrar({
     App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayWheelPassThrough", "DockOverlayWheelPassThrough", App::ParamInfo::Bool, true)
         .setTitle("Auto mouse wheel pass through")
         .setDoc("Auto pass through mouse wheel event on transparent dock overlay."),
-    App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayWheelDelay", "DockOverlayWheelDelay", App::ParamInfo::Int, 1000)
+    App::ParamInfo("Gui", "OverlayParams", "User parameter:BaseApp/Preferences/View", "DockOverlayWheelDelay", "DockOverlayWheelDelay", App::ParamInfo::Int, 300)
         .setTitle("Delay mouse wheel pass through (ms)")
         .setDoc("Delay capturing mouse wheel event for passing through if it is\n"
 "previously handled by other widget.")
@@ -714,7 +714,7 @@ const long & OverlayParams::getDockOverlayWheelDelay() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & OverlayParams::defaultDockOverlayWheelDelay() {
-    const static long def = 1000;
+    const static long def = 300;
     return def;
 }
 

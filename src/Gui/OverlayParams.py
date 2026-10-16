@@ -118,7 +118,7 @@ Params = [
          "Auto mouse click through transparent part of dock overlay.", title="Auto mouse pass through"),
     ParamBool('DockOverlayWheelPassThrough', True,
          "Auto pass through mouse wheel event on transparent dock overlay.", title="Auto mouse wheel pass through"),
-    ParamInt('DockOverlayWheelDelay', 1000, title="Delay mouse wheel pass through (ms)", proxy=ParamSpinBox(0, 99999, 1),
+    ParamInt('DockOverlayWheelDelay', 300, title="Delay mouse wheel pass through (ms)", proxy=ParamSpinBox(0, 99999, 1),
          doc="Delay capturing mouse wheel event for passing through if it is\n"
               "previously handled by other widget."),
     ParamInt('DockOverlayAlphaRadius', 2, title="Alpha test radius", proxy=ParamSpinBox(1, 100, 1), doc=\
