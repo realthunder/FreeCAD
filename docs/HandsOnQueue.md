@@ -168,6 +168,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 11:20: entry 155 -- a hidden frame is the page's frames toggled off
+(border and label not drawn); the reporter: then not draggable is
+natural -- the consequence accepted.** Under the entry.
+
 **2026-10-16 11:08: entry 160 ANSWERED -- scanner.FCStd, open then recompute: a
 missing edge on Adaptor, its fillet face gone; yesterday the same steps
 showed it.** Under the entry.
@@ -3206,7 +3210,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN |
 | 153 | 2026-10-16 | a change request: SHORTEN the overlay's WHEEL CAPTURE timeout -- after zooming with the wheel, moving the pointer onto the TREE and wheeling there still ZOOMS; the grace time is understood (it keeps a continuous zoom from breaking) but seems a bit TOO LONG | OPEN; by the note-taker's reading the setting `DockOverlayWheelDelay`, 1000 ms by default and in the reporter's config, held for the view since entry 150's fix. ANSWERED 09:57: 300 ms; ONLY the DEFAULT changes; the timer RESTARTS on each turn as now (current logic kept). 11:02 DONE in the source, r76, NOT committed, not pushed, not staged: default 300 ms, restart logic kept |
 | 154 | 2026-10-16 | a defect: TechDraw, DRAGGING a view to move it does NOT move its GEOMETRY -- the view's BORDER and DIMENSIONS move along; on RELEASE the geometry is moved correctly; ONLY under the BGFX renderer, Qt works | OPEN. ANSWERED 09:50: the LATEST STAGED copy (`78fdeb4689`); a view IN A PROJECTION GROUP; before -- not sure. 11:02 CAUSE FOUND (OLD code): a projection group never reports its moves (setFlags drops ItemSendsGeometryChanges), its X/Y written only at release, and bgfx places the geometry by X/Y; fix in build r77, NOT committed, not pushed, not staged |
-| 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too. ANSWERED 09:51: EVERY VIEW; the rule: wherever an area is RENDERED TRANSPARENT, the click goes THROUGH. ANSWERED 09:53: ANYTHING NON-TRANSPARENT registers a click; a HIDDEN FRAME does NOT (reverses entry 149's band along a hidden frame). 11:02 in build r77, NOT committed, not pushed, not staged: part views and groups by the frame band only while the frame is shown, plus label and caption; image, symbol, spreadsheet, annotation, rich text where drawn (alpha mask, 0.5 mm); CONSEQUENCE: a view with a hidden frame and no label cannot be grabbed to drag |
+| 155 | 2026-10-16 | a defect: TechDraw, the click PASS-THROUGH of OVERLAPPING views still does NOT work on an ACTIVE VIEW, although its background renders TRANSPARENT | OPEN; by the note-taker's reading the reporter's answer to entry 148 (g): image views (an Active View is one) keep their whole frame pickable under 149's rule -- the reporter wants them to pass clicks too. ANSWERED 09:51: EVERY VIEW; the rule: wherever an area is RENDERED TRANSPARENT, the click goes THROUGH. ANSWERED 09:53: ANYTHING NON-TRANSPARENT registers a click; a HIDDEN FRAME does NOT (reverses entry 149's band along a hidden frame). 11:02 in build r77, NOT committed, not pushed, not staged: part views and groups by the frame band only while the frame is shown, plus label and caption; image, symbol, spreadsheet, annotation, rich text where drawn (alpha mask, 0.5 mm); CONSEQUENCE: a view with a hidden frame and no label cannot be grabbed to drag. 11:20: the reporter asks what a hidden frame is -- the page's frames toggled off: border AND label not drawn (the label kept only by KeepLabel); "if not [shown] then non-draggable is only natural" -- the consequence ACCEPTED |
 | 156 | 2026-10-16 | a change request: the NAVIGATION CUBE's AXIS CROSS LABELS (X, Y, Z): their font colour THEME AWARE | OPEN; by the note-taker's reading a fixed black default now, set by no theme pack. ANSWERED 10:02: a value FROM EACH THEME; a colour set BY HAND WINS; ONLY the axis labels. 11:02 in build r77, NOT committed, not pushed, not staged: each pack writes NaviCube/ThemeAxisLabelColor (light grey dark packs, black light); AxisLabelColor by hand first |
 | 157 | 2026-10-16 | a defect and a DESIGN question: TREE selection vs PER-VIEW selection -- with a TechDraw page active, a tree click (SyncView on) switches to the item's 3D view, which has NO selection while the tree shows the item SELECTED, and the stuck tree item is hard to clear; the reporter's thought: a direct tree selection BROADCASTS to all LOCAL (non-client) views, and on an active-view switch a TIMER syncs the tree with the active view; beware a loop with SyncView; "what do you think" | OPEN; a DISCUSSION -- the note-taker's answer under the entry, NOT agreed. 10:22: the timer's sync must NOT AUTO-SCROLL the tree; the reporter ASKS the note-taker to elaborate the edit-session exception -- elaborated under the entry, a question back (SyncView into a view in an edit) |
 | 158 | 2026-10-16 | a defect: an obvious APPLICATION FREEZE at the FIRST SWITCH to a TechDraw page after the open; the reporter remembers a commit that delays a page's processing at the load until it is shown; REDUCE this latency somehow | OPEN; by the note-taker's reading the commit is `48b9aaa0ba` (entry 47, 2026-10-11), which measured 0.06 to 0.23 s for a page's first show. ANSWERED 10:17: scanner.FCStd, Page009, about 5 SECONDS or more. 11:02: a probe times the first page show in build r77 |
@@ -21185,6 +21189,20 @@ longer be grabbed to drag it."
 OPEN for the reporter, by the note-taker's reading: that consequence --
 a part view with frames hidden and no label is draggable by nothing (its
 lines select their edges); acceptable, or grabbed some other way?
+
+**2026-10-16 11:20, the reporter:** "entry 155, hidden frame view means what? is
+frame border shown. if not then non-draggable is only natural"
+The note-taker's reading: a question (what "hidden frame" means -- is the
+border shown?) and, conditionally, an acceptance: if the border is not
+shown, a view that cannot be dragged is natural.
+The note-taker's answer (READ in the source, nothing run): a "hidden
+frame" is the page's frames toggled OFF (the page's `ShowFrames`, the
+Toggle Frames command): `QGIView::drawBorder`
+(`src/Mod/TechDraw/Gui/QGIView.cpp` 507-525) then hides the BORDER, the
+LABEL and the lock -- the label stays only with the view's `KeepLabel`
+(`ViewProviderDrawingView.cpp` 71); the caption is always drawn. So the
+border is NOT shown -- by the reporter's condition the consequence is
+ACCEPTED: such a view (no label kept, no caption) is grabbed by nothing.
 
 ## 156. The navigation cube's axis cross labels: a theme-aware font colour (a change request) -- OPEN; ANSWERED 10:02 -- from each theme, by hand wins, labels only
 
