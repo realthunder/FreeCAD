@@ -168,6 +168,12 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-16 09:39: NEW ENTRY 151 (a defect) -- opening scanner.FCStd, NO TechDraw
+edge or face selects (dimensions do); under the Qt renderer none are
+drawn. 09:40: NEW ENTRY 152 (a change request) -- the PartDesign task
+watcher hides itself when the active view is not a 3D view.** Under the
+entries.
+
 **2026-10-16 09:01: PUSHED 08:59 and STAGED 09:01 CLEAN (`78fdeb4689`) -- on the
 reporter's "Dimension line will select dimension. Once done push and
 restage" to the build session (relayed): a dimension's lines and arrows
@@ -3078,6 +3084,8 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 148 | 2026-10-15 | a defect: TechDraw PICKING -- `scanner.FCStd`, Page009, view Front010: the FACE SEGMENTATION is wrong (the big inner hole found as a face, almost none of the outer faces found); and, maybe as a consequence, many EDGES respond to HOVER but a click SELECTS nothing, no error. The reporter asks whether using Part's WIREJOINER for the face segmentation is too much work | OPEN. ANSWERED 16:47: whether it ever worked NOT KNOWN; the unselectable edges MAYBE the borders of the missing faces (TechDraw has many OVERLAPPING edges) -- e.g. the centre hole taken for a face: its LOWER half arc selects, the UPPER half not; and FACES too: not every face that lights on hover selects -- e.g. view REAR001, the LEFTMOST HALF-CIRCLE face. 16:51: Rear001 is on Page009 too; such a click selects NOTHING. 17:58: the REPORTER's word relayed by the build session: WireJoiner gated by a property, default true for new objects, false for older files (legacy face finder) -- BUILT as DrawViewPart.UseWireJoiner, IN BUILD r63, NOT committed, not pushed, not staged; the hover-but-not-select defect SEPARATE, a probe after r63. 21:26 (build session): FACES DONE `5edea1ed83` (UseWireJoiner; scanner.FCStd's views keep the old finder until set); CLICKS: a CAUSE FOUND and FIXED `eefc466af4` (a dimension took presses over its whole rectangle) -- Front010 clicks selecting nothing at least 54 of 93 before, 10 after; LOCAL, not pushed, not staged; LEFT OPEN for the reporter: overlapping edges (the top one takes the click), the image view ActiveView017 over Rear001 takes clicks, 10 Front010 edges still select nothing. 2026-10-16 08:05: (h) FIXED `3370553582`, LOCAL, not pushed, not staged, on the reporter's "Continue" to the build session (relayed) -- the 10 dead edges were arcs crossed by a dimension's line or arrow; a dimension now takes a press on its LABEL only; 10 -> 0 on the copy; (f), (g) still open. 2026-10-16 09:01: the REPORTER RULED (to the build session, relayed) "Dimension line will select dimension" -- DONE `3a5e7c0239`, replacing the label-only choice; a projection group (AutoDistribute) no longer takes its views' dimensions' presses; no Front010 click selects nothing; PUSHED and STAGED `78fdeb4689`; (f), (g) still open |
 | 149 | 2026-10-15 | a change request: a TechDraw VIEW is OPAQUE to PICKING even where its background is transparent; the pick should go THROUGH the transparent background, while the view's BORDER stays pickable | OPEN. BUILT IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58): a part view and a projection group picked by a 2 mm band along the frame (shown or not), label and caption, lines and faces; the empty inside lets the click through; other view kinds unchanged. DONE 21:26 (build session): `7c6d93ba5f`, LOCAL, not pushed, not staged |
 | 150 | 2026-10-15 | a defect: WHEEL ZOOM under a TRANSPARENT overlay TASK PANEL sometimes stops: wheeling on while the pointer moves onto the panel's transparent area stops the zoom, and further wheeling does nothing -- it works again only after the pointer leaves the area and comes back WITHOUT wheeling, then starts wheeling there | OPEN; read by the note-taker: the overlay's WHEEL DELAY, renewed by every wheel event (OverlayManager.cpp 2070 to 2077) -- a guess, nothing run. ANSWERED 16:55: the TREE VIEW and the PROPERTY VIEW behave the SAME; moving onto the TREE while wheeling stops the zoom and the TREE SCROLLS instead, even over its transparent area; entering without wheeling, the wheel zooms. CAUSE READ by the build session 16:57: the wheel delay does not remember WHERE the wheel went; fix planned after r60 -- within the delay the wheel goes to the same place (the view or the panel) it went to; NOT fixed yet. FIX IN BUILD r63, NOT committed, not pushed, not staged (build session, 17:58), as described at 16:57. DONE 21:26 (build session): `c9417fada7`, LOCAL, not pushed, not staged |
+| 151 | 2026-10-16 | a defect: opening `scanner.FCStd` NOW, NONE of the TechDraw EDGES or FACES can be selected; DIMENSIONS can (by line or label); rendered under QT, NONE of the faces or edges are even DRAWN | OPEN; by the note-taker's reading on the copy staged 09:01 (`78fdeb4689`), a regression of the TechDraw picking work (entries 148, 149) |
+| 152 | 2026-10-16 | a change request: the PartDesign TASK WATCHER hides itself when the ACTIVE VIEW is NOT a 3D view | OPEN |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -20667,6 +20675,68 @@ where it went, the view or the panel).
 **2026-10-15 21:26, the build session: DONE, COMMITTED `c9417fada7`, LOCAL, not pushed, not staged.** From the build session's message, received and written here 21:26; its log section `5ca4041b81`; the commits SEEN in `git log`, nothing run by the note-taker.
 "150 DONE (c9417fada7)".
 
+## 151. scanner.FCStd: no TechDraw edge or face selectable any more; under the Qt renderer none drawn (a defect) -- OPEN
+
+**2026-10-16 09:39, the reporter:** "new defect, now when I open scanner document,
+non of the Techdraw edge or face are selectable. Dimensions can be selected
+by line or label. When render under Qt, non of the face the edges are even
+drawn."
+
+The note-taker's reading:
+- "now": on the copy STAGED 09:01 today (`78fdeb4689`, entry 148's
+  dimension ruling) -- a REGRESSION: on 2026-10-15 edges and faces of
+  scanner.FCStd selected (entry 148 was about SOME of them not).
+- NO TechDraw edge or face of the document selects; DIMENSIONS do, by
+  their line or their label (148's ruling works).
+- "render under Qt": by the note-taker's reading the page renderer set to
+  Qt's own painting (`PageRendererVg` off; the reporter's config had it
+  on, entry 148) -- there the faces and edges are NOT DRAWN AT ALL; with
+  the other renderer they are drawn but not selectable.
+NOT said:
+a. which pages and views -- every page of the document, or Page009 only;
+   part views in a projection group and single ones alike;
+b. a NEW document or a new view -- the same or not;
+c. whether the copy staged 2026-10-15 22:20 (`9c68e150ad`) had it --
+   i.e. from this morning's commits or from yesterday evening's;
+d. whether hovering still lights the edges and faces;
+e. "render under Qt" = the PageRendererVg setting off -- the
+   note-taker's reading, not said.
+READ in the source, nothing run -- the TechDraw Gui commits in the stage
+since `1df007d0f2`: `7c6d93ba5f` (149: `QGIView::shape()` for a part view,
+`QGIViewPart::passesClicks()` true, returns only a 2 mm band along the
+frame plus label and caption), `5edea1ed83` (148 faces, UseWireJoiner,
+false for old files), `eefc466af4`, `3370553582` and `3a5e7c0239` (148:
+a dimension's shape; `QGIProjGroup`'s event filter "takes only its own
+views' presses"). By the note-taker's reading, two candidates for the
+picking, NOT checked: the group's filter now taking presses on its own
+part views (edges and faces are their children), and the part view's
+band-only shape; none read for the drawing under Qt.
+
+## 152. The PartDesign task watcher hides itself when the active view is not a 3D view (a change request) -- OPEN
+
+**2026-10-16 09:40, the reporter:** "new request. PartDesign task watcher to hide
+itself if the active view is not 3D view."
+
+The note-taker's reading:
+- The TASK WATCHERS of PartDesign: the command boxes the task panel shows
+  when no task is open ("Start Body", "Sketch tools", "Face tools",
+  "Edge tools", ...).
+- When the ACTIVE view (the active MDI window) is NOT a 3D view -- a
+  TechDraw page, a spreadsheet, a text view, ... -- they are HIDDEN; back
+  when a 3D view is active again.
+NOT said:
+a. PartDesign only, or every workbench's watchers (they are the generic
+   `TaskWatcherCommands`);
+b. what the panel shows instead -- nothing; and whether an overlaid task
+   panel then hides as an empty panel;
+c. a running task (a dialog open) -- not touched, by the note-taker's
+   reading.
+READ in the source, nothing run: `src/Mod/PartDesign/Gui/Workbench.cpp`
+241-360 (the watchers, `Gui::TaskView::TaskWatcherCommands`);
+`src/Gui/TaskView/TaskWatcher.h` 51 (`virtual bool shouldShow()`);
+`src/Gui/TaskView/TaskView.cpp` 1485 (`updateWatcher()`, a 200 ms timer)
+and 1123 (`showForActiveView()`).
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -20678,5 +20748,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 150
+the build session, 131 and 132 found by it; entries 134 to 152
 are of 2026-10-15, 134 said to the build session)
