@@ -23296,6 +23296,16 @@ a hover shows the preview face's own name. Whether a hover should resolve
 edge or the row) is the reporter's -- NOT ANSWERED. b's add-mode toggle
 from the preview is the build session's choice (point b of 12:18).
 
+**2026-10-17 12:40, the reporter (to the note-taker), on b of 12:33:** "In the toggle
+mode you mean? Because inly that mode can delete"
+The note-taker's answer, READ in the source, nothing run: yes -- the
+build session's "add mode" IS the toggle mode. The panel has ONE such
+mode (TaskDressUpParameters.h: `enum selectionModes { none, refToggle,
+plane, line }`, the button btnAdd sets refToggle); a click in it adds an
+edge or removes one already listed. So: in the toggle mode a click on the
+preview toggles (removes) that reference, like a click on the base edge;
+outside it a click only selects.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
