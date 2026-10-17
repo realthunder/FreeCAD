@@ -600,6 +600,9 @@ struct View3DInventorViewer::Private
     }
 
     bool                              animating = false;
+    // getSceneBoundBox() is taking the box a fit frames: what is shown on
+    // top only for the near and far planes is left out of it (onGetBoundingBox)
+    bool                              fitting = false;
 
     CoinPtr<SoTempPath>     tmpPath;
 
@@ -5127,8 +5130,10 @@ void View3DInventorViewer::onGetBoundingBox(SoGetBoundingBoxAction *action)
     }
     // and what this view shows on top, shown in the document or not: the
     // near and far planes are fitted to this box (docs/HandsOnQueue.md
-    // entry 124, the reporter's choice of "way 2")
-    if (inventorSelection)
+    // entry 124, the reporter's choice of "way 2"). Not the box a fit
+    // frames: a selected point of an empty sketch, its origin, made one
+    // and the fit zoomed in to it.
+    if (inventorSelection && !_pimpl->fitting)
         inventorSelection->extendByOnTop(action);
 }
 
@@ -8150,6 +8155,7 @@ void View3DInventorViewer::moveCameraTo(const SbRotation& orientation, const SbV
 bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
     if (!inventorSelection)
         return false;
+    Base::StateLocker fitting(_pimpl->fitting);
 
     SoGetBoundingBoxAction action(this->getSoRenderManager()->getViewportRegion());
     SoSkipBoundingBoxElement::set(action.getState(), SoSkipBoundingGroup::EXCLUDE_BBOX);
