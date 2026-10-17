@@ -21007,3 +21007,305 @@ drawn, the rest in the sketch's own; undone, the sketch is automatic
 again; a setting changed is nothing to it; turned on by hand it keeps
 its colour. `sketch-auto-face-color.py` (19, were 16) the same for the
 face colour and the transparency.
+
+## 34. Held: what Scion's design suggests for the log (2026-10-17)
+
+**Ruled (user, 2026-10-17): held** until there is a real use case. This
+records what was found, so the idea is not looked for again from nothing.
+
+**What Scion is.** Anthropic's in-house version control, described in
+its engineering post "Redesigning source control" (2026-10-13). It
+replaced git for one monorepo after agent-written changes went from
+about 2,500 merges a day (May) to over 30,000 (September). Internal, and
+not meant as a general git replacement.
+
+**What it does differently from git.**
+
+- A commit lists only the files it changed against its first parent,
+  with content-addressed blobs: a commit costs in proportion to the
+  change, not the tree.
+- History questions are answered from indexes derived from each
+  commit's parents and kept: blame, per-file history, skip lists over
+  the commit graph. New indexes are added without changing clients.
+- Commit, merge and rebase run on the server; nothing to push; clients
+  always online.
+- Few refs: branches and tags are discouraged except main and release.
+- No merge queue: testing after the merge, conflicts fixed by an agent.
+- Review by kind of change: approval rules differ for, say, a comment
+  change and a sensitive logic change; humans review intent, not lines.
+
+**What the log could take, ranked for an agent that models -- frequent
+and very large changesets.**
+
+1. **Indexes derived from each row**, rebuildable from the rows: skip
+   pointers over ancestry (the merge base found in log time where
+   `mergeBaseOf` walks first parents); the last writer of each
+   (object, property) -- the log's blame, which selective undo and an
+   object's history walk for now; a per-row summary of what it touched.
+   The most valuable of the six.
+2. **A kind on every change** -- view only, a parameter, a label, a
+   link or dependency rewired, a create, a remove -- and approval rules
+   by kind on the per-branch grants (32.25): an agent's view and
+   parameter edits applied at once, removes and rewires waiting for a
+   person. A partial accept by kind and by object, not only by property.
+3. **Provenance**: whether a person or an agent made a row -- the model,
+   and the person it acts for -- and a task record above the rows of one
+   agent step, saying what the step is for. The reviewer sees the stated
+   purpose, the counts by kind and the shape diff (32), not values.
+4. **Storage in proportion to the change**: a sketch stored as its change
+   (phase 8) matters more when an agent edits many sketches; an accepted
+   agent task squashed to one row (31.13 has the squash).
+5. **Rebase on the host**: an agent's branch replayed onto the new head;
+   on a conflict the agent runs its step again rather than picking sides.
+6. **Write grants scoped to part of the model**: a Body, a Group, a set
+   of objects, the way Scion scopes permissions by directory.
+
+**What does not fit.** Scale-out (the unit here is one document's
+history, not a monorepo); no full copy anywhere (a recompute needs the
+whole document); always-online clients (offline desktop work matters);
+agents settling every conflict alone (a wrong CAD merge is a shape that
+looks valid and is wrong, so structural changes keep a person's gate).
+
+Scion also confirms the model: a row here is a change of properties
+against its parent, by content hash, as a Scion commit is of files --
+with the before values Scion does not keep, which is what undo needs.
+
+## 35. An assembly whose files share no history, brought as branches: design (2026-10-17)
+
+**Asked (user, 2026-10-17):** develop further the bringing in of a file
+that shares no history with this one as a branch of its own (30.22),
+for assemblies -- and first a design that says what is still lacking:
+for example exporting every linked file without history to a folder,
+and partial loading of documents on another branch or a pinned version.
+
+Nothing of this is built. The survey's measurements were run, and
+found one bug, fixed (item 6 c).
+
+### 35.1 The case
+
+An assembly here is a set of files: `Asm.FCStd` holds `App::Link`s and
+Assembly joints whose `Reference1`/`Reference2` are `PropertyXLinkSub`
+naming elements of parts in other files (`Part.FCStd`, `Bolt.FCStd`,
+sub-assemblies through `Assembly::AssemblyLink`, which is itself an
+`XLink`). What comes back from elsewhere is a set too:
+
+- **(a) a round trip**: the set sent to someone with no log, or another
+  FreeCAD, edited -- parts changed, parts added, the assembly rewired --
+  and sent back;
+- **(b) a stranger**: a supplier's sub-assembly, a variant made in
+  parallel from the same STEP: no common origin at all;
+- **(c) an agent's copy** (34): the same shape as (a), at a rate.
+
+Each wants: see their whole set beside ours, decide file by file, and
+merge -- or take a file of theirs whole.
+
+### 35.2 What exists (survey)
+
+1. **One file as an independent branch** (30.19, 30.21, 30.22):
+   `importFork` brings a file with no history, or one that shares none,
+   as one row on a branch from nothing; `mergeBranch` merges it by what
+   the two hold. A copy written without history keeps a save id of its
+   own (`saveCopy(path, withHistory=False)`, 30.19 G2), so a copy sent
+   away and edited comes back as a branch from the state it left with,
+   not as a stranger.
+2. **Pins and live branch links** (27.20 to 27.24): an `XLink` may carry
+   `version` (a frozen instance, `<file>@v<num>`) or `branch` (the
+   branch's tip, `<file>@<branch>@`); `DocInfo::get` keys a link on
+   either, and `Application::openDocumentPrivate` opens such a name
+   through `Document::openFileBranch`.
+3. **17.4 ruled** that branches are per document: "a 'branch this
+   assembly and all its parts' operation is a UI convenience over
+   per-document branches plus pinned links, not a store concept".
+4. **Partial loading** exists for plain files: a link asks for the
+   objects it needs (`_pendingDocMap`), `Document::restore(file, true,
+   objNames)` reads those and their dependencies, the document is
+   `PartialDoc`, read-only, and is reloaded whole when a later link asks
+   for an object it lacks. **A version or a branch name is opened whole**:
+   `openDocumentPrivate` hands `objNames` to nothing on the
+   `parseName` path (`Application.cpp`, the `openFileBranch` call), so
+   every pin and every live branch link opens its document entirely --
+   two pins to two versions of one large part are two whole documents.
+5. **Export**: `saveCopy` writes one file; an `XLink` writes the
+   relative path it has (`PropertyXLink::Save`), so a copy saved into
+   another folder points where the original's links pointed from the
+   original's folder. `Std_LinkImportAll` folds linked objects into one
+   file, which is another thing. There is no "the set, to a folder".
+6. **Measured** (`~/.cache/lv-merge/probe/asm/`, `probe.py`,
+   `probe-hist.py`): `Asm` linking `Part/Box`; a copy of both made, the
+   copy's box made longer, a new `Bolt.FCStd` linked into the copy's
+   assembly; the copy's `Asm.FCStd` imported here.
+   - **(a) no history either side: refused.** The import stops at the
+     file as found, "Owner document not saved": its document is a new one
+     with no file name (`_importReplay`), and a relative `XLink` has
+     nothing to resolve against (`DocInfo::getDocPath`). **No document
+     holding a link to another file can come as an independent branch
+     today.** Reading the copy also opened its `Part.FCStd` and
+     `Bolt.FCStd` as documents (`Part1`, `Bolt`), and they stayed open
+     after the import.
+   - **(b) both with history**: the rows replay, but the copy's links
+     resolve against *this* file's folder: its link to `Bolt.FCStd`
+     stopped the import at that row (F8, "ours/Bolt.FCStd does not
+     exist"), and its box made longer was never looked at -- `Part.FCStd`
+     is another file, and an import is of one.
+   - **(c) a bug on the way, fixed**: a first import that stops at the
+     file as found threw a JSON type error out of `_importState`
+     (`kept.value` on a null map, when no earlier import had kept one).
+     It now reports the stop as it should.
+7. **Kinship by id and name** (30.22 Left): an object of a stranger's
+   file is "its own" unless its id and name are this file's object's --
+   so a stranger's file merged comes *beside* ours, every object twice.
+   For (b) a merge is rarely what is wanted; taking the file whole is.
+8. **Document `Uid`** is kept by a copy (it is in `Document.xml`), but
+   is changed in memory when two documents with one Uid are open at once
+   (`Document::onChanged`, "already exists, change to"). Read from the
+   file, it is a pairing key; read from an open document, it is not.
+
+### 35.3 What is lacking
+
+**L1. One file to a branch, with its links.** Before any set: the
+import's document needs a place, so relative links resolve; and the
+copy's links need a map from their file to a file here. Without it (6a,
+6b) nothing with a link comes at all, or comes pointing at the wrong
+file. The side documents the read opens are closed after it.
+
+**L2. The set.** The top file and the closure of what its `XLink`s
+reach, transitively (sub-assemblies, pins, branch links), read from the
+copy's folder.
+
+**L3. Pairing their files with ours**, first that answers:
+
+1. a history both hold (`forkBase`, 30.12) -- a fork;
+2. the save id a copy without history names (30.19) -- a round trip;
+3. the export's manifest (L7), which also pairs the files a pinned or
+   branch link became;
+4. the `Uid` read from the file's `Document.xml` (35.2 item 8);
+5. the same path relative to the set's top;
+6. none: a file of theirs alone.
+
+The pairing is shown, and can be changed by hand, before anything is
+imported: two `Bracket.FCStd` in two folders, or a file renamed, are
+the user's to say.
+
+**L4. Their links as branch links.** Each paired file is imported as a
+branch of our file (30.13 to 30.22, the branch named after the set);
+in the rows brought, every `XLink` to a paired file is rewritten to our
+file with `branch="<that branch>"` (27.23), and to a file of theirs
+alone to its staged copy (L5). Opening the top's imported branch then
+shows their whole set through the machinery that exists: the tip
+`Asm@<set>@` pulls `Part@<set>@` and so on.
+
+**L5. A file of theirs alone** is not written into our folder at import:
+it is staged, a copy kept beside the history (`<store>/incoming/<set>/`
+at its relative path), read-only, and links of the imported branches
+point there. At the merge it is written where the user says -- by
+default the same path relative to our top -- and the links rewritten.
+
+**L6. The set's record and its merge.**
+
+- The import's record of each file names the set; the top's record
+  holds the map (their file, our file, branch, how paired). The set is
+  a record, not a store concept -- 17.4 stands.
+- One dialog for the set: the files on the left, dependencies first
+  (parts, then sub-assemblies, then the top), each with its state --
+  unchanged, changed, new, theirs alone -- and per file one of
+  **Merge** (the merge dialog of 28/32 for that file), **Take theirs**
+  (the file becomes theirs, one row, ours kept in the history -- what
+  (b) wants), **Keep ours**.
+- Merged in that order, as one step to undo across the documents (the
+  shared transaction id, 12). After a part is merged its branch is no
+  longer needed: the top's links that named it with `branch=` are
+  rewritten to plain links, now that ours holds what theirs had.
+- A file kept ours while their top's change needs it -- a joint naming
+  a face only their part has -- is said in the preview, before the
+  merge, from the references the top's rows hold.
+
+**L7. The set, exported to a folder without history ("pack and go").**
+
+- The closure of L2, from the open top.
+- The layout kept: every file at its path relative to the deepest
+  folder the set has in common, so relative links stay right as they
+  are; a file outside it (`../../lib/Bolt.FCStd`, an absolute path)
+  under `_external/` and the links to it rewritten.
+- A pinned version or a branch tip is a document of its own, so it is a
+  file of its own: `Part.v3.FCStd`, `Part.<branch>.FCStd`, the links to
+  it rewritten to plain ones -- no `version`, no `branch` -- so the set
+  opens in any FreeCAD, upstream's included.
+- Each file written by `saveCopy(withHistory=False)`, which keeps the
+  save id (30.19 G2): the set, edited elsewhere and brought back, pairs
+  by L3 item 2 and comes as forks from the states it left with.
+- A manifest in the folder, `FreeCAD-set.json`: for each file written,
+  the file here, the branch, the version, the save id, the Uid. It is
+  what pairs `Part.v3.FCStd` back to `Part` at v3 (L3 item 3), and it is
+  not needed by anyone who just opens the set.
+- Options: with history (for someone who also runs the log), zipped,
+  overwrite or refuse a folder that is not empty.
+- The Gui: File > Export > "Export with linked files...", a dialog
+  listing every file of the set, its state (live, pinned v3, branch x),
+  the name it will be written under, and the folder.
+
+**L8. Partial loading for versions and branches.**
+
+- **A frozen version** (pins): already read-only, as a partial document
+  must be. `openFileBranch` takes the objects asked for and restores
+  those and their dependencies from the version's `Document.xml`, as
+  `restore(file, true, objNames)` does; marked `PartialDoc` as well as
+  `FrozenVersion`; reloaded whole by the existing path when a later link
+  asks for more.
+- **A branch tip opened for a live link** (an editable instance): opened
+  partial while nobody edits it; the first edit loads it whole (Q7).
+- **What a version is restored from**: a version kept as a snapshot is
+  a `Document.xml` and members, which a partial restore reads as it
+  reads a file. A state reached by moving along rows (27.34) changes
+  objects the partial load did not read; partial there means the moves
+  skip what is not loaded. First cut: partial only where the state
+  comes from a snapshot; whole otherwise, and measured before more.
+- Two versions of one large part pinned at once are then two partial
+  documents, each with what its links show.
+
+**L9. What the assembly itself asks.**
+
+- **Joint references across a merged part.** A joint's `Reference1/2`
+  names an element of a part through the link. When the part's merge
+  recomputes, its elements may be named again; 31.25 makes such a move
+  no change within a document, and 27.80 carries a reference into
+  another document. Whether the two together keep a joint right after a
+  part merged under it is to be measured, not assumed.
+- **Solved placements.** The solver writes the parts' placements at a
+  recompute. If those writes are recorded as the recompute's (derived,
+  28.2 item 4), a merge takes theirs and solves again, which is right;
+  if not, every moved part is a conflict. To be measured.
+- **`AssemblyLink`** copies joints into its own (`handleJointReference`)
+  at a recompute: derived as well, to be checked the same way.
+
+### 35.4 Questions
+
+| | Question | Proposed |
+| --- | --- | --- |
+| Q1 | The order of pairing (L3) | As listed: history, save id, manifest, Uid from the file, relative path, none; shown and changeable by hand before the import. |
+| Q2 | A file of theirs alone (L5) | **Staged** beside the history until the merge, then written at its relative path by default. Not written into our folder at import. |
+| Q3 | The set's merge (L6) | **One step to undo** across the documents. |
+| Q4 | A file kept ours that their top's change needs | **Said in the preview**, merged as asked: the user chose to keep it. |
+| Q5 | Names of a pinned version or a branch tip in an export (L7) | `<stem>.v<num>.FCStd`, `<stem>.<branch>.FCStd`. |
+| Q6 | Links in an export | **Relative**, the layout kept; what lies outside under `_external/`. |
+| Q7 | A partial branch tip edited (L8) | **Loaded whole at the first edit** (today a partial document refuses; it would refuse there too, with the offer to load whole, if that is preferred). |
+| Q8 | "Take theirs" for a file (L6) | **Yes**, one row, the default for a file that is a stranger (no pairing by L3 items 1 to 4). |
+| Q9 | Where the set is recorded | The set's name in every file's import record; the map in the top's. |
+
+### 35.5 Build order, once ruled
+
+1. **L1**: one file with links -- the import's document given a file
+   name to resolve against, their links mapped (identity for a single
+   file: their file to ours), the side documents closed; the probe of
+   35.2 item 6 as tests, (a) and (b).
+2. **L8** for frozen versions, then for branch tips; measured on a
+   large part pinned twice.
+3. **L7**, the export and its manifest; a test that exports a set with
+   a pin and a branch link and opens it with the log off.
+4. **L2 to L5**: the set imported, paired, linked as branch links, the
+   new files staged; the export of 3, edited and brought back, as the
+   round trip test.
+5. **L6**: the set's dialog, Take theirs, the one undo step; a GUI check.
+6. **L9** on an Assembly workbench model: a part merged under joints,
+   placements solved on both sides, a sub-assembly.
+
+Steps 2 and 3 do not depend on 1 and can go first if wanted.
