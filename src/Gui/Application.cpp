@@ -49,6 +49,7 @@
 # include <QTimer>
 # include <QWindow>
 # include <QOpenGLWidget>
+# include <QPalette>
 #endif
 
 #include <Inventor/CoinFork.h>
@@ -3738,7 +3739,26 @@ bool Application::isDarkTheme()
     // when the theme follows it. Never unset here -- unlike
     // systemPrefersDarkScheme(), the pin is exactly what is being asked.
     if (qGuiApp) {
-        return qGuiApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+        const Qt::ColorScheme scheme = qGuiApp->styleHints()->colorScheme();
+        if (scheme != Qt::ColorScheme::Unknown) {
+            return scheme == Qt::ColorScheme::Dark;
+        }
+        // A platform that cannot take the pin answers Unknown whatever was
+        // asked -- xcb with no desktop theme plugin, the Linux box with no
+        // GNOME or KDE around it -- and the Dark theme's title buttons came
+        // out black on its dark bars. Then the pin itself, as the theme
+        // wrote it (read as applyColorScheme() reads it), and with none --
+        // the desktop deciding -- how dark the palette's ground is.
+        auto hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/MainWindow");
+        if (!hGrp->GetBool("ThemeAuto", false)) {
+            const std::string pinned =
+                hGrp->GetASCII("ColorScheme", MainWindowParams::defaultColorScheme().c_str());
+            if (pinned == "Dark" || pinned == "Light") {
+                return pinned == "Dark";
+            }
+        }
+        return QGuiApplication::palette().color(QPalette::Window).lightness() < 128;
     }
 #endif
     // No scheme API (or no GUI yet): fall back to the filename sniff this
