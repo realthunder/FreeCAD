@@ -299,19 +299,21 @@ void PagePrinter::printPdf(std::string file)
         return;
     }
     QString filename = QString::fromUtf8(file.data(), file.size());
-    QPrinter printer(QPrinter::HighResolution);
-    printer.setFullPage(true);
-    printer.setOutputFormat(QPrinter::PdfFormat);
+    // No QPrinter: all it gave was a resolution and a layout with no
+    // margins, and its constructor asks the print system for the default
+    // printer -- with no CUPS daemon answering, a minute's wait for every
+    // export. A full-page PDF QPrinter at HighResolution is 1200 dpi.
+    const int resolution = 1200;
 
     QPdfWriter pdfWriter(filename);
     QString documentName = QString::fromUtf8(m_vpPage->getDrawPage()->getNameInDocument());
     pdfWriter.setTitle(documentName);
-    pdfWriter.setResolution(printer.resolution());
+    pdfWriter.setResolution(resolution);
 
     PaperAttributes attr = getPaperAttributes(m_vpPage->getDrawPage());
     double width = attr.pagewidth;
     double height = attr.pageheight;
-    QPageLayout pageLayout = printer.pageLayout();
+    QPageLayout pageLayout(QPageSize(QPageSize::A4), QPageLayout::Portrait, QMarginsF());
     setPageLayout(pageLayout, m_vpPage->getDrawPage(), width, height);
     pdfWriter.setPageLayout(pageLayout);
 
@@ -320,7 +322,7 @@ void PagePrinter::printPdf(std::string file)
     QPainter painter(&pdfWriter);
 
     QRectF sourceRect(0.0, Rez::guiX(-height), Rez::guiX(width), Rez::guiX(height));
-    double dpmm = printer.resolution() / 25.4;
+    double dpmm = resolution / 25.4;
     QRect targetRect(0, 0, width * dpmm, height * dpmm);
     renderPage(m_vpPage, painter, sourceRect, targetRect);
     painter.end();
