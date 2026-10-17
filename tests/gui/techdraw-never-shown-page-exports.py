@@ -71,7 +71,9 @@ def red_pixels(tag):
         for x in range(img.width()):
             p = img.pixel(x, y)
             r, g, b = (p >> 16) & 255, (p >> 8) & 255, p & 255
-            if r > 180 and g < 90 and b < 90:
+            # by hue, as techdraw-page-items-when-needed.py counts: full red
+            # was the digits alone, some twenty pixels on xvfb
+            if r > g + 40 and r > b + 40:
                 red += 1
     return red
 

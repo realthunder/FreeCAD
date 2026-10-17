@@ -58,6 +58,19 @@ def page_view():
     return views[-1] if views else None
 
 
+def sheet(img):
+    """The box of the page's white sheet in a grab of the page view."""
+    xs, ys = [], []
+    for y in range(img.height()):
+        for x in range(img.width()):
+            if img.pixel(x, y) & 0xffffff == 0xffffff:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return (0, 0, -1, -1)
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
 def painted(tag):
     """How much of the page is the dimension's red, and the hatch's blue."""
     v = page_view()
@@ -65,9 +78,14 @@ def painted(tag):
         return (-1, -1)
     img = v.grab().toImage()
     img.save(os.path.join(OUT, tag + ".png"))
+    # On the sheet only: the view's ground around it follows the 3D view's
+    # background (Mod/TechDraw/Colors/BackgroundAs3DView), a blue gradient
+    # by default, which is as blue by hue as the hatch. The sheet is what
+    # its white spans.
+    x0, y0, x1, y1 = sheet(img)
     red = blue = 0
-    for y in range(img.height()):
-        for x in range(img.width()):
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
             p = img.pixel(x, y)
             r, g, b = (p >> 16) & 255, (p >> 8) & 255, p & 255
             # Both by hue. The hatch's thin lines are antialiased pale --

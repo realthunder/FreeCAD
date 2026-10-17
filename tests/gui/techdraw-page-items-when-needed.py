@@ -65,9 +65,15 @@ def painted(tag):
         for x in range(img.width()):
             p = img.pixel(x, y)
             r, g, b = (p >> 16) & 255, (p >> 8) & 255, p & 255
-            if r > 180 and g < 90 and b < 90:
+            # By hue, as techdraw-colour-without-opacity.py counts: on
+            # xvfb's 1280x1024 the page view is narrow and a dimension's
+            # lines are thinner than a pixel, antialiased pale, so only the
+            # digits were full red or green -- some twenty pixels, the
+            # floor itself. The page's ground, the 3D view's blue gradient
+            # by default, is neither.
+            if r > g + 40 and r > b + 40:
                 red += 1
-            elif g > 150 and r < 90 and b < 90:
+            elif g > r + 40 and g > b + 40:
                 green += 1
     return (red, green)
 

@@ -173,15 +173,35 @@ def dump(name, view=None):
     return QtGui.QImage(path), ""
 
 
-def edge2_pixels(img):
-    """The pixels down Edge2's centre, clear of its ends and of Edge1."""
+def edge2_pixels(img, near=None):
+    """The pixels down Edge2's centre, clear of its ends and of Edge1.
+
+    With \a near, each row's pixel is the one around it nearest that
+    colour: a line two pixels wide has one of them antialiased,
+    and which column the projected centre falls in is a matter of the
+    rasteriser and the view's size -- llvmpipe at 802 wide lands on the
+    blended one, other boxes on the full one.
+    """
     view = state["view"]
     x0, y0 = view.getPointOnViewport(FreeCAD.Vector(20, -12, 0))
     x1, y1 = view.getPointOnViewport(FreeCAD.Vector(20, 27, 0))
     res = []
     for y in range(min(y0, y1), max(y0, y1) + 1):
-        res.append(QtGui.QColor(img.pixel(int(x0), int(img.height() - 1 - y))))
+        res.append(pixel_at(img, x0, y, near))
     return res
+
+
+def pixel_at(img, x, y, near=None):
+    """The pixel at viewport x, y (bottom up); with \a near, the one
+    nearest that colour within a pixel of it, either way (a horizontal axis
+    has its blended row above or below as a vertical edge has its column)."""
+    row = int(img.height() - 1 - y)
+    if near is None:
+        return QtGui.QColor(img.pixel(int(x), row))
+    got = [QtGui.QColor(img.pixel(int(x) + dx, row + dy))
+           for dy in (0, -1, 1) for dx in (0, -1, 1)
+           if 0 <= int(x) + dx < img.width() and 0 <= row + dy < img.height()]
+    return min(got, key=lambda c: dist(c, near))
 
 
 def dist(a, b):
@@ -206,9 +226,9 @@ def pixels_plain():
 def pixels_hovered():
     try:
         img, err = dump("hovered.png")
-        hov = edge2_pixels(img)
         c = state["want"]
         want = QtGui.QColor.fromRgbF(c[0], c[1], c[2])
+        hov = edge2_pixels(img, want)
         plain = state["plain"]
         # The icon and the label are where the plain edge is not drawn on
         # top: its most common colour is the edge's own, and the pixels away
@@ -281,7 +301,8 @@ def others_dump(todo):
         img, err = dump("hovered-%s.png" % name)
         view = state["view"]
         x, y = view.getPointOnViewport(FreeCAD.Vector(xy[0], xy[1], 0))
-        c = QtGui.QColor(img.pixel(int(x), int(img.height() - 1 - y))) if img else None
+        w = state["want"]
+        c = pixel_at(img, x, y, QtGui.QColor.fromRgbF(w[0], w[1], w[2])) if img else None
         check("a hovered %s is drawn in the preselection colour" % name,
               near_want(c), "%s %s" % (c and c.name(), err))
         FreeCADGui.Selection.clearPreselection()
