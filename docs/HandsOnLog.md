@@ -7579,3 +7579,29 @@ before the 18:06 save (entry 167; identical to the 10-06 .FCBak).
   r98 and r101 never built: their configure hung on a try-compile ninja
   stuck in the kernel (killed; r102 ran "cmake --build" only). NOT pushed,
   NOT staged.
+
+### 2026-10-17 afternoon: pushed and staged; entry 169 done
+
+- On the reporter's "Push and restage": origin LinkVibe = `b76481281e`;
+  stage14 from r102, INSTALL-USER: OK, 07:41 (my wait for it was killed
+  for memory, the stage itself was not).
+- 169 (a dress-up's preview pickable, a pick of it syncs the list):
+  `1f52f9070e` (Gui) and `fd8a8d4422` (PD). The preview is pickable
+  between a dress-up's setEdit and unsetEdit only. Three things in Gui
+  stood in the way, found by a probe (r103: the pick list had the
+  preview's face, named ";AddSub;Face1", behind the base's edge and face):
+  the view passed over every pick of an open edit (the 10-02 rule for the
+  sketcher) -- now the view provider may name what the view still selects;
+  the session's on-top node was picked by depth, and a convex fillet's
+  face lies inside the base -- such nodes are now picked first; and
+  rmvSelection() of an element with no old style name removed nothing (the
+  preview's face stayed selected beside the base edge, r104). The panel:
+  a present edge's preview face becomes the base edge's selection (its row
+  selected, the base edge lit); a missing one's selects the "?Edge" row,
+  the face staying the selection; in the add mode either toggles the
+  reference. A hover preselects the preview face itself; whether it should
+  resolve the name too is with the reporter (the note-taker, b2f68618b2).
+- r105 on the real screen: fillet-preview-pick-syncs-list.py 14 of 14;
+  fillet-hover-outlines-face.py 16 of 16; sketch-constraint-external-pick
+  49, sketch-external-both-ways 6, box-selection-gate 6,
+  fillet-handle-click-in-view 15, none failed. NOT pushed, NOT staged.
