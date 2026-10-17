@@ -310,6 +310,8 @@ void TaskDressUpParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
         return;
 
     auto* pcDressUp = static_cast<PartDesign::DressUp*>(DressUpView->getObject());
+    if (selObj == pcDressUp && addSel && onPreviewSelected(msg))
+        return;
     if(selObj == pcDressUp && addSel) {
         // The dress up feature itself is selected, trace the selected element
         // back to its base
@@ -414,6 +416,153 @@ void TaskDressUpParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
     }
 }
 
+bool TaskDressUpParameters::onPreviewSelected(const Gui::SelectionChanges& msg)
+{
+    // The preview picked in the 3D view, by the name the pick gave it before
+    // it was resolved: "When (pre)selected in 3d view, resolve the element
+    // name to base edge name. For missing element resolve to the ?Edge name.
+    // So I am expecting the edit panel list item selection sync"
+    // (docs/HandsOnQueue.md entry 169)
+    const Gui::SelectionChanges &orig = msg.pOriginalMsg ? *msg.pOriginalMsg : msg;
+    const std::string subname(orig.pSubName ? orig.pSubName : "");
+    const std::string &prefix = PartDesign::FeatureAddSub::addsubElementPrefix();
+    auto pos = subname.rfind(prefix);
+    if (pos == std::string::npos)
+        return false;
+    const std::string docName(orig.pDocName ? orig.pDocName : "");
+    const std::string objName(orig.pObjectName ? orig.pObjectName : "");
+    auto dropPick = [&]() {
+        Gui::Selection().rmvSelection(docName.c_str(), objName.c_str(), subname.c_str());
+    };
+
+    QTreeWidgetItem *item = getPreviewItem(subname.c_str() + pos + prefix.size());
+    if (!item) {
+        // nothing in the list to take it for: kept in the selection, but not
+        // as a reference to toggle
+        if (selectionMode == refToggle)
+            dropPick();
+        return true;
+    }
+
+    // A present edge's element is the base feature's edge: selected there in
+    // its place, and taken from there as a pick of it would be -- its row
+    // selected, or in the add mode removed
+    if (getGeometryItemReference(item).isEmpty()) {
+        std::string sub;
+        auto obj = getInEdit(sub);
+        if (!obj)
+            return true;
+        sub += getGeometryItemText(item).constData();
+        dropPick();
+        Gui::Selection().addSelection(obj->getDocument()->getName(),
+                                      obj->getNameInDocument(), sub.c_str());
+        return true;
+    }
+
+    // A missing one has nothing there: its row is all that names it, the
+    // pick of its face stays the selection
+    if (selectionMode == refToggle) {
+        dropPick();
+        {
+            Base::StateLocker guard(busy);
+            delete item;
+        }
+        syncItems();
+        return true;
+    }
+    Base::StateLocker guard(busy);
+    item->setSelected(true);
+    return true;
+}
+
+QTreeWidgetItem *TaskDressUpParameters::getPreviewItem(const char *element)
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView || !treeWidget || !element || !element[0])
+        return nullptr;
+    auto* pcDressUp = static_cast<PartDesign::DressUp*>(DressUpView->getObject());
+    App::DocumentObject *base = pcDressUp->Base.getValue();
+    const Part::TopoShape preview = pcDressUp->DressUpShape.getShape();
+    if (!base || preview.isNull())
+        return nullptr;
+    TopoDS_Shape picked;
+    try {
+        picked = preview.getSubShape(element, true);
+    }
+    catch (Base::Exception &) {
+    }
+    if (picked.IsNull())
+        return nullptr;
+
+    // The faces of the preview the element is, or lies on
+    std::vector<TopoDS_Shape> faces;
+    if (picked.ShapeType() == TopAbs_FACE)
+        faces.push_back(picked);
+    else {
+        for (TopExp_Explorer f(preview.getShape(), TopAbs_FACE); f.More(); f.Next()) {
+            for (TopExp_Explorer e(f.Current(), picked.ShapeType()); e.More(); e.Next()) {
+                if (e.Current().IsSame(picked)) {
+                    faces.push_back(f.Current());
+                    break;
+                }
+            }
+        }
+    }
+
+    QTreeWidgetItem *found = nullptr;
+    bool ambiguous = false;
+    auto take = [&](QTreeWidgetItem *item) {
+        if (found && found != item)
+            ambiguous = true;
+        found = item;
+    };
+
+    // By the faces the feature keeps for each reference: a fillet's, and a
+    // missing one's as it was last made (getItemElement(), the other way)
+    for (int i = 0, count = treeWidget->topLevelItemCount(); i < count; ++i) {
+        auto item = treeWidget->topLevelItem(i);
+        if (!isBaseItem(item))
+            continue;
+        TopoDS_Shape made = pcDressUp->getMadeFaces(getGeometryItemText(item).constData());
+        if (made.IsNull())
+            continue;
+        bool hit = false;
+        for (TopExp_Explorer exp(made, TopAbs_FACE); !hit && exp.More(); exp.Next()) {
+            for (const auto &face : faces)
+                hit = hit || face.IsPartner(exp.Current());
+        }
+        if (hit)
+            take(item);
+    }
+    if (found)
+        return ambiguous ? nullptr : found;
+
+    // Else by the history of the feature's own face the preview shows: back
+    // to the base element it was made on (a chamfer's edge, a draft's face)
+    const Part::TopoShape shape = pcDressUp->Shape.getShape();
+    std::string tmp;
+    for (const auto &face : faces) {
+        for (int i = 1, c = shape.countSubShapes(TopAbs_FACE); i <= c; ++i) {
+            if (!face.IsPartner(shape.getSubShape(TopAbs_FACE, i)))
+                continue;
+            const std::string name = "Face" + std::to_string(i);
+            for (auto &hist : pcDressUp->getElementHistory(pcDressUp, name.c_str())) {
+                if (hist.obj != base)
+                    continue;
+                tmp.clear();
+                App::SubObjectT sel(base, hist.element.appendToBufferWithPrefix(tmp));
+                auto items = treeWidget->findItems(
+                        QString::fromUtf8(sel.getOldElementName().c_str()), Qt::MatchExactly);
+                for (auto item : items) {
+                    if (!item->parent() && isBaseItem(item))
+                        take(item);
+                }
+            }
+        }
+    }
+    return ambiguous ? nullptr : found;
+}
+
 void TaskDressUpParameters::onButtonRefAdd(bool checked)
 {
     auto DressUpView = getDressUpView();
@@ -453,7 +602,26 @@ void TaskDressUpParameters::onButtonRefAdd(bool checked)
     allow.setFlag(AllowSelection::FACE, allowFaces);
     allow.setFlag(AllowSelection::POINT, allowVertexes);
     allow.setFlag(AllowSelection::PLANAR, false);
-    Gui::Selection().addSelectionGate(new ReferenceSelection(this->getBase(), allow));
+    // The base's elements, and the preview's: a pick of it toggles the
+    // reference that made it (onPreviewSelected(), entry 169). Refused, a
+    // click on the preview -- drawn over the base's edges -- went nowhere.
+    class DressUpSelection : public ReferenceSelection
+    {
+    public:
+        DressUpSelection(const App::DocumentObject *base, AllowSelectionFlags allow,
+                         const App::DocumentObject *dressUp)
+            : ReferenceSelection(base, allow), dressUp(dressUp)
+        {}
+        bool allow(App::Document *pDoc, App::DocumentObject *pObj, const char *sSubName) override
+        {
+            return (pObj && pObj == dressUp)
+                || ReferenceSelection::allow(pDoc, pObj, sSubName);
+        }
+    private:
+        const App::DocumentObject *dressUp;
+    };
+    Gui::Selection().addSelectionGate(
+            new DressUpSelection(this->getBase(), allow, DressUpView->getObject()));
 }
 
 void TaskDressUpParameters::onRefDeleted() {

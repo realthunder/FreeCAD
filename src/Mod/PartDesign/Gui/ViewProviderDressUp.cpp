@@ -70,7 +70,15 @@ bool ViewProviderDressUp::setEdit(int ModNum) {
         PartDesign::DressUp* dressUp = static_cast<PartDesign::DressUp*>(getObject());
         assert (dressUp);
         if (dressUp->getBaseObject (/*silent =*/ true)) {
-            return inherited::setEdit(ModNum);
+            // The preview picked in the 3D view, its element named in the
+            // panel's list by the edge it was made on: "I want all dress up
+            // preview shape to be pickable in 3d view" (docs/HandsOnQueue.md
+            // entry 169). Outside the edit it stays out of the picks.
+            setPreviewPickable(true);
+            if (inherited::setEdit(ModNum))
+                return true;
+            setPreviewPickable(false);
+            return false;
         } else {
             QMessageBox::warning ( nullptr, QObject::tr("Feature error"),
                     QObject::tr("%1 misses a base feature.\n"
@@ -83,6 +91,12 @@ bool ViewProviderDressUp::setEdit(int ModNum) {
     } else {
         return inherited::setEdit(ModNum);
     }
+}
+
+void ViewProviderDressUp::unsetEdit(int ModNum)
+{
+    setPreviewPickable(false);
+    inherited::unsetEdit(ModNum);
 }
 
 

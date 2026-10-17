@@ -64,6 +64,7 @@ public:
 
 protected:
     bool setEdit(int ModNum) override;
+    void unsetEdit(int ModNum) override;
     /// The faces the failed fillets had, the preview's last ones, red
     std::vector<App::Color> previewFaceColors(int count) const override;
 

@@ -34,6 +34,7 @@
 # include <Inventor/nodes/SoTransform.h>
 # include <Inventor/actions/SoSearchAction.h>
 # include <Inventor/SoPath.h>
+# include <Inventor/SoPickedPoint.h>
 # include <Bnd_Box.hxx>
 # include <BRep_Tool.hxx>
 # include <BRepBndLib.hxx>
@@ -128,7 +129,7 @@ PartGui::ViewProviderPartExt * ViewProviderAddSub::getAddSubView()
     pAddSubView->MapTransparency.setValue(false);    
     pAddSubView->ForceMapColors.setValue(false);
     pAddSubView->setHighlightFaceEdges(true);
-    pAddSubView->Selectable.setValue(false);
+    pAddSubView->Selectable.setValue(previewPickable);
     pAddSubView->Lighting.setValue(1);
     pAddSubView->enableFullSelectionHighlight(false, false, false);
     pAddSubView->setStatus(Gui::SecondaryView,true);
@@ -588,6 +589,33 @@ bool ViewProviderAddSub::getDetailPath(const char *subname,
         return view->getDetailPath(subname, pPath, true, det);
     }
     return ViewProvider::getDetailPath(subname, pPath, append, det);
+}
+
+bool ViewProviderAddSub::getElementPicked(const SoPickedPoint *pp, std::string &subname) const
+{
+    // A pick through the preview, wherever it hangs -- the session's node,
+    // the base feature's switch or this feature's own -- is the preview's
+    auto path = pp ? static_cast<const SoFullPath*>(pp->getPath()) : nullptr;
+    if (pAddSubView && path && path->containsNode(previewGroup.get())) {
+        if (!pAddSubView->getElementPicked(pp, subname))
+            return false;
+        subname.insert(0, PartDesign::FeatureAddSub::addsubElementPrefix());
+        return true;
+    }
+    return ViewProvider::getElementPicked(pp, subname);
+}
+
+bool ViewProviderAddSub::isEditingPickSelectable(const std::string &subname) const
+{
+    return previewPickable
+        && boost::starts_with(subname, PartDesign::FeatureAddSub::addsubElementPrefix());
+}
+
+void ViewProviderAddSub::setPreviewPickable(bool pickable)
+{
+    previewPickable = pickable;
+    if (pAddSubView)
+        pAddSubView->Selectable.setValue(pickable);
 }
 
 void ViewProviderAddSub::reattach(App::DocumentObject *obj)

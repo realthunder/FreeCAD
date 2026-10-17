@@ -56,8 +56,17 @@ public:
                        SoFullPath *pPath,
                        bool append,
                        SoDetail *&det) const override;
+    /// An element of the preview, behind the add/sub prefix, as
+    /// getDetailPath() takes it
+    bool getElementPicked(const SoPickedPoint *pp, std::string &subname) const override;
+    /// A pick of the preview while it is pickable (setPreviewPickable)
+    bool isEditingPickSelectable(const std::string &subname) const override;
     QIcon getIcon(void) const override;
-    
+
+    /// Let a pick in the 3D view reach the preview, or not (the default):
+    /// a dress-up's in its edit (docs/HandsOnQueue.md entry 169)
+    void setPreviewPickable(bool pickable);
+
     bool isPreviewMode() const;
     /** Show or drop the edit preview: the base feature with the tinted
      * tool shape over it, in place of this feature.
@@ -160,6 +169,7 @@ private:
     App::SubObjectT             previewOccurrence;
     App::SubObjectT             previewBase;
     std::string                 previewSession;
+    bool                        previewPickable = false;
     int                         defaultChild;
     std::string                 displayMode;
     App::DocumentObjectT        baseFeature;

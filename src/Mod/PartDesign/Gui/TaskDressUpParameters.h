@@ -62,6 +62,11 @@ public:
 
     bool getItemElement(QTreeWidgetItem *item, std::string &subname);
     void lightPreviewFace(const std::string &subname);
+    /** The row of the reference whose dress-up made \a element of the
+     * preview ("Face2", as the preview names it): the reverse of
+     * getItemElement(). Null for none, or more than one.
+     */
+    QTreeWidgetItem *getPreviewItem(const char *element);
 
 protected Q_SLOTS:
     void onButtonRefAdd(const bool checked);
@@ -108,6 +113,9 @@ protected:
     enum selectionModes { none, refToggle, plane, line };
     virtual void clearButtons(const selectionModes notThis);
     void onSelectionChanged(const Gui::SelectionChanges& msg) override;
+    /// A selection of the preview, taken as one of the row its element
+    /// names; false when it is not one
+    bool onPreviewSelected(const Gui::SelectionChanges& msg);
     virtual void changeEvent(QEvent *e) override = 0;
     bool event(QEvent *e) override;
     bool handleEvent(QEvent *e);
