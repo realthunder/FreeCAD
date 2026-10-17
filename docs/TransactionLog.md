@@ -21195,9 +21195,9 @@ shows their whole set through the machinery that exists: the tip
 `Asm@<set>@` pulls `Part@<set>@` and so on.
 
 **L5. A file of theirs alone** is not written into our folder at import:
-it is staged, a copy kept beside the history (`<store>/incoming/<set>/`
-at its relative path), read-only, and links of the imported branches
-point there. At the merge it is written where the user says -- by
+it is held in the top's log as 30.29 holds a sent file, written to the
+transient directory to be opened, read-only, and links of the imported
+branches point there (Q2, 35.6). At the merge it is written where the user says -- by
 default the same path relative to our top -- and the links rewritten.
 
 **L6. The set's record and its merge.**
@@ -21222,10 +21222,10 @@ default the same path relative to our top -- and the links rewritten.
 **L7. The set, exported to a folder without history ("pack and go").**
 
 - The closure of L2, from the open top.
-- The layout kept: every file at its path relative to the deepest
-  folder the set has in common, so relative links stay right as they
-  are; a file outside it (`../../lib/Bolt.FCStd`, an absolute path)
-  under `_external/` and the links to it rewritten.
+- The layout kept under the top's folder: every file inside it at its
+  path relative to the top, so relative links stay right as they are; a
+  file outside it (`../../lib/Bolt.FCStd`, an absolute path) under
+  `_external/` and the links to it rewritten (Q6, 35.6).
 - A pinned version or a branch tip is a document of its own, so it is a
   file of its own: `Part.v3.FCStd`, `Part.<branch>.FCStd`, the links to
   it rewritten to plain ones -- no `version`, no `branch` -- so the set
@@ -21282,12 +21282,12 @@ default the same path relative to our top -- and the links rewritten.
 | | Question | Proposed |
 | --- | --- | --- |
 | Q1 | The order of pairing (L3) | As listed: history, save id, manifest, Uid from the file, relative path, none; shown and changeable by hand before the import. |
-| Q2 | A file of theirs alone (L5) | **Staged** beside the history until the merge, then written at its relative path by default. Not written into our folder at import. |
+| Q2 | A file of theirs alone (L5) | **Held in the top's log** (30.29's held files) until the merge, then written at its relative path by default. Not written into our folder at import. |
 | Q3 | The set's merge (L6) | **One step to undo** across the documents. |
 | Q4 | A file kept ours that their top's change needs | **Said in the preview**, merged as asked: the user chose to keep it. |
 | Q5 | Names of a pinned version or a branch tip in an export (L7) | `<stem>.v<num>.FCStd`, `<stem>.<branch>.FCStd`. |
-| Q6 | Links in an export | **Relative**, the layout kept; what lies outside under `_external/`. |
-| Q7 | A partial branch tip edited (L8) | **Loaded whole at the first edit** (today a partial document refuses; it would refuse there too, with the offer to load whole, if that is preferred). |
+| Q6 | Links in an export | **Relative**, the layout under the top's folder kept; what lies outside under `_external/`. |
+| Q7 | A partial branch tip edited (L8) | **Loaded whole when the user turns to edit it**; a write that still reaches it partial is refused, never accepted and lost. |
 | Q8 | "Take theirs" for a file (L6) | **Yes**, one row, the default for a file that is a stranger (no pairing by L3 items 1 to 4). |
 | Q9 | Where the set is recorded | The set's name in every file's import record; the map in the top's. |
 
@@ -21309,3 +21309,213 @@ default the same path relative to our top -- and the links rewritten.
    placements solved on both sides, a sub-assembly.
 
 Steps 2 and 3 do not depend on 1 and can go first if wanted.
+
+### 35.6 The questions set out (user: elaborate, 2026-10-18)
+
+**Q1. How their files are paired with ours.**
+
+Everything after depends on it. A wrong pair is the worst error the set
+can make: their `Bracket` brought as a branch of our `Plate` is a merge
+in which every object conflicts or comes twice. The signals, strongest
+first:
+
+1. **A history both hold** (`forkBase`, 30.12): their file is a copy of
+   ours that ran the log. Certain, and the base is a row.
+2. **The save id a copy without history names** (`Version`, 30.19): a
+   copy we wrote with `saveCopy(withHistory=False)`, or ours edited where
+   the log was off. Certain, and the base is the state it left with.
+3. **Our export's manifest** (L7): certain, and the only signal for a
+   file the export named itself -- `Part.v3.FCStd` is `Part` at v3, which
+   neither 1 nor 2 can say for a pinned version written as a file.
+4. **The `Uid` in their `Document.xml`**: strong, not certain. A copy
+   keeps it, but so does a Save As used to start a new part from an old
+   one -- `Bracket2.FCStd` saved as from `Bracket.FCStd` holds the same
+   Uid, so two of our files may claim one of theirs. Read from the file,
+   never from an open document (35.2 item 8).
+5. **The same path relative to the top**: weak. A stranger's set laid out
+   like ours, from one template or one STEP, has a `Bracket.FCStd` that
+   is no kin of ours at all.
+6. **None**: a file of theirs alone (Q2).
+
+Proposed: pair at once by 1 to 3; fill in 4 and 5 as **guessed**, shown
+so, and a pair guessed by them defaults to Take theirs rather than Merge
+(Q8), since there is no base to merge against; where two of ours answer
+equally, pair none and let the user say. The dialog shows every pair and
+why, and can be changed before anything is imported -- an import makes
+branches, and branches can be deleted, but a pairing seen first costs
+nothing.
+
+**Q2. A file only they have.**
+
+Their `Bolt.FCStd` is linked by their top, and we have none. Until the
+merge, nobody here has accepted it. Three places for it:
+
+- (a) **written into our folder at import**: links work as they are, but
+  a file nobody accepted is on disk, declining the merge leaves it
+  there, and a later file of our own of that name collides with it;
+- (b) **a staging folder** beside the file: the same litter, one folder
+  over, and it survives nothing a transient directory does not;
+- (c) **held in the top's log**, as 30.29 holds a file a client sent:
+  one blob, a `heldfile` entry, saved inside the `.FCStd` with the
+  history, there again after a crash (25), let go after the merge or
+  when the set's branches are deleted. To be shown, it is written to the
+  transient directory and opened from there, read-only, and the imported
+  branches' links point at it.
+
+Proposed: **(c)**. At the merge it is written at the path relative to
+our top that it had relative to theirs, the user able to change it, and
+asked when a file is already there; it starts a history of its own at
+its first save. Where the history is not embedded (the preference off,
+27.5 ruling 1), a held file lasts the session only, and the dialog says
+so.
+
+**Q3. The set's merge as one step to undo.**
+
+Merging a set is a merge per document: N merge rows in N logs. The user
+did one thing, "merge their set", and expects one Ctrl+Z.
+
+- (a) **One step across the documents**: the merges run under one
+  application transaction, whose id the documents share (12); undo in
+  any of them undoes all, as a cross-document transaction does today.
+- (b) **A step per document**: each undone where it is; between, the
+  part merged and the top not, which is a state nobody chose.
+
+What a failure part way does: with (a) the merges already done are
+rolled back (`rollBackMerge`, 31.21, 31.23) and nothing is left half
+merged. The preview resolves conflicts first, so this is rare -- an
+error in a recompute, a file that cannot be written. The rewrite of the
+top's branch links to plain ones (L6) is part of the top's merge row, so
+it goes with it. What (a) does not survive is what 12 already says:
+a document of the set closed, or saved and reopened elsewhere, before
+the undo -- detected and reported, not repaired.
+
+Proposed: **(a)**.
+
+**Q4. A file kept ours that their top's change needs.**
+
+Their top adds a joint on a face of their `Bracket` -- a hole they
+added; the user keeps our `Bracket` and merges the top. After the merge
+the joint names a face our `Bracket` has not: the joint is broken, the
+solver fails on it.
+
+- (a) **Refused** until `Bracket` is merged too or the joint left out;
+- (b) **merged as asked**, the references that will not resolve listed
+  before the merge, and in the report after;
+- (c) **`Bracket` pulled in** with the top, silently.
+
+How it is known before the merge: the merge's result (32.17,
+`previewMergeResult`) is made for the top with the links resolved as the
+user has decided them -- to our `Bracket` where kept -- and every
+reference the top's merged rows hold (`XLinkSub` and expressions, as
+27.80 resolves them) is resolved there; those that fail are listed on
+the top's line: "2 references will not resolve: Joint001.Reference2 ->
+Bracket#Face7".
+
+Proposed: **(b)**, with the line offering to merge `Bracket` as well.
+Keeping a file ours is a choice -- the user may mean to fix the joint
+after -- and (a) would block it; (c) overrides the choice.
+
+**Q5. Names of a pinned version or a branch tip, exported.**
+
+A set can show one file in several states: a live link to `Part`, one
+pinned to v3, one to the branch `light`. Without history each state is
+a file of its own: `Part.FCStd`, `Part.v3.FCStd`, `Part.light.FCStd`.
+
+Not `Part@v3.FCStd`: `@` is how the log names a version's document here
+(`<file>@v<num>`, `FileHistory::parseName`), and a real file named so,
+opened here, would be read as one. A branch name is made safe for a file
+name -- `/`, `:` and the `@` of an implicit branch (`main@v3`) become
+`-` -- and two that end alike get `-2`. The names only need to be
+readable: the manifest holds what each is.
+
+Proposed: **as above**.
+
+**Q6. Links in an export.**
+
+A link keeps a relative path, or an absolute one where it was set so,
+and a set may reach outside the top's folder: `../../lib/Bolt.FCStd`, a
+library on another drive.
+
+- (a) **The deepest folder the set has in common** as the root, the
+  layout under it kept: no link rewritten, but with a library elsewhere
+  the common folder is `/` or a drive, and the export carries a tree of
+  someone's home directory;
+- (b) **the top's folder as the root**: everything under it at the path
+  it has, links unchanged; everything outside under `_external/`,
+  collisions `-2`, and only the links to those rewritten;
+- (c) **one flat folder**, every link rewritten.
+
+Proposed: **(b)**, every link written relative, so the folder can be
+moved or zipped whole. 35.3 L7 is changed to say so.
+
+**Q7. A branch tip loaded partially, then edited.**
+
+What a partial document does today: it **accepts** an edit, with a
+warning once per document that the change "will not be saved"
+(`DocumentObject.cpp`), and its recompute is skipped with "Please reload
+partial document" (`Document::recompute`). For a frozen version that
+never arises -- `FrozenVersion` refuses every edit (27.22) -- so a
+partial pin is safe as it stands. A branch tip a live link opened is an
+editable instance: the user can open it and change it, and a partial
+one would take the change and lose it.
+
+- (a) **Loaded whole at the first write**: not possible inside the write
+  -- loading whole is closing and opening the document again, which
+  cannot happen under a property being set;
+- (b) **loaded whole when the user turns to edit it**: the document
+  made active in a view, or an edit or task started on one of its
+  objects -- before any write -- and a write that still reaches it
+  partial (a script) **refused**, with a message saying how to load it
+  whole;
+- (c) **refused always**, with the offer to load whole: safe, and one
+  dialog more each time;
+- (d) **today's behaviour**: accepted, warned, lost. Not an option.
+
+Proposed: **(b)**. Whether plain partial documents -- not the log's --
+should refuse the same way is a separate question; it would change
+upstream's behaviour, and is not asked here.
+
+**Q8. Take theirs, for a file.**
+
+A file that is a stranger -- paired by Uid or path only, or chosen by
+the user -- cannot be merged usefully: kinship is by id and name (30.22
+Left), so a merge brings every object of theirs beside ours. What is
+wanted is the file as theirs.
+
+- **What it is**: one row in our file, a forward transaction as a
+  restore is (24.d) with their state as its source: ours' objects
+  removed, theirs made, under their names -- free once ours are gone.
+  Undoable; ours stays in the history and any earlier state can be
+  opened or restored.
+- **What it breaks, said first**: a link from outside the set into this
+  file -- another assembly of ours linking `Part#Box` -- resolves by the
+  object's name, and holds where theirs has the name; an element
+  reference through it (`Box`'s `Face6`) holds only where their element
+  is named the same, which for a stranger it seldom is. Both are found
+  as Q4 finds them, and listed on the file's line.
+- **Offered for every file**, kin or not.
+
+Proposed: **yes**; the default action is Take theirs for a file paired
+by a guess (Q1 items 4 and 5), Merge for a file paired with certainty
+(items 1 to 3), and Keep ours always there.
+
+**Q9. Where the set is recorded.**
+
+What asks for the record:
+
+- the same set brought again continues the same branches, file by file,
+  as F7 does for one file;
+- the set's dialog opened again later, from the top, shows the set;
+- the set's branches deleted together, when the user says no;
+- a set sent by a client of a served document arrives as a request
+  (30.20, 30.23), and the request is the set's.
+
+Where: (a) in the top only -- but a part file does not then know its
+branch is a set's, and a second import of it alone would start another;
+(b) in each file only -- but nothing holds the whole; (c) both: every
+file's import record carries the set's id and name, and the top's holds
+the map -- their path, our file, the branch, how it was paired, the
+action chosen. A library part in two sets is two branches with two set
+names, never one.
+
+Proposed: **(c)**.
