@@ -287,6 +287,12 @@ void TaskDressUpParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
     if(!treeWidget || !DressUpView)
         return;
 
+    if (msg.Type == Gui::SelectionChanges::SetPreselect
+            || msg.Type == Gui::SelectionChanges::RmvPreselect) {
+        onPreselectChanged(msg);
+        return;
+    }
+
     bool addSel = false;
     switch(msg.Type) {
     case Gui::SelectionChanges::ClrSelection: {
@@ -472,6 +478,96 @@ bool TaskDressUpParameters::onPreviewSelected(const Gui::SelectionChanges& msg)
     }
     Base::StateLocker guard(busy);
     item->setSelected(true);
+    return true;
+}
+
+void TaskDressUpParameters::onPreselectChanged(const Gui::SelectionChanges& msg)
+{
+    // "Hover face should resolve the edge name too, which should trigger
+    // edge preselection highlight and edit panel list item hover plus scroll
+    // to view. Same if preselect edge in 3d view or hover list item, the
+    // other two shall react" (docs/HandsOnQueue.md entry 169). A hover of
+    // the preview's face of a present edge comes here as the base's edge
+    // (ViewProviderDressUp::redirectEditingPick); a missing one's as the
+    // face itself. A hover of the list preselects by itself (onTimer()).
+    if (hoverFromList || !treeWidget)
+        return;
+    QTreeWidgetItem *item = nullptr;
+    if (msg.Type == Gui::SelectionChanges::SetPreselect) {
+        auto DressUpView = getDressUpView();
+        auto* pcDressUp = DressUpView
+            ? static_cast<PartDesign::DressUp*>(DressUpView->getObject()) : nullptr;
+        App::DocumentObject *base = pcDressUp ? pcDressUp->getBaseObject(true) : nullptr;
+        auto selObj = msg.Object.getObject();
+        if (pcDressUp && selObj == pcDressUp) {
+            const Gui::SelectionChanges &orig = msg.pOriginalMsg ? *msg.pOriginalMsg : msg;
+            const std::string subname(orig.pSubName ? orig.pSubName : "");
+            const std::string &prefix = PartDesign::FeatureAddSub::addsubElementPrefix();
+            auto pos = subname.rfind(prefix);
+            if (pos != std::string::npos)
+                item = getPreviewItem(subname.c_str() + pos + prefix.size());
+        }
+        else if (base && selObj == base && msg.pSubName && msg.pSubName[0]) {
+            for (auto found : treeWidget->findItems(QString::fromUtf8(msg.pSubName),
+                                                    Qt::MatchExactly)) {
+                if (!found->parent() && isBaseItem(found)) {
+                    item = found;
+                    break;
+                }
+            }
+        }
+    }
+    setHoverItem(item);
+    std::string subname;
+    if (item && getItemElement(item, subname))
+        lightPreviewFace(subname);
+    else
+        lightPreviewFace(std::string());
+}
+
+void TaskDressUpParameters::setHoverItem(QTreeWidgetItem *item)
+{
+    if (!treeWidget || item == hoverItem)
+        return;
+    // A look, not an edit: a changed background is an itemChanged, which a
+    // fillet's panel takes for an edit of the row's values (and crashed
+    // on). The view is told by the model, which this does not block.
+    QSignalBlocker blocker(treeWidget);
+    if (hoverItem) {
+        // still a row of the list: one deleted meanwhile is not touched
+        for (int i = 0, count = treeWidget->topLevelItemCount(); i < count; ++i) {
+            if (treeWidget->topLevelItem(i) != hoverItem)
+                continue;
+            for (int col = 0; col < static_cast<int>(hoverBrushes.size()); ++col)
+                hoverItem->setBackground(col, hoverBrushes[col]);
+            break;
+        }
+    }
+    hoverItem = item;
+    hoverBrushes.clear();
+    if (!item)
+        return;
+    // the look of a row under the pointer: the selection's colour, faint
+    QColor color = treeWidget->palette().color(QPalette::Highlight);
+    color.setAlpha(70);
+    for (int col = 0, count = treeWidget->columnCount(); col < count; ++col) {
+        hoverBrushes.push_back(item->background(col));
+        item->setBackground(col, QBrush(color));
+    }
+    treeWidget->scrollToItem(item);
+}
+
+bool TaskDressUpParameters::getPreviewTarget(const char *element, App::SubObjectT &target)
+{
+    QTreeWidgetItem *item = getPreviewItem(element);
+    if (!item || !getGeometryItemReference(item).isEmpty())
+        return false;
+    std::string sub;
+    auto obj = getInEdit(sub);
+    if (!obj)
+        return false;
+    sub += getGeometryItemText(item).constData();
+    target = App::SubObjectT(obj, sub.c_str());
     return true;
 }
 
@@ -976,6 +1072,10 @@ void TaskDressUpParameters::onTimer() {
     if(enteredObject != treeWidget || !treeWidget)
         return;
 
+    // the list's own hover: the row is under the pointer, and what it
+    // preselects is not to be taken back as a hover from the 3D view
+    Base::StateLocker guard(hoverFromList);
+    setHoverItem(nullptr);
     auto item = treeWidget->itemAt(treeWidget->viewport()->mapFromGlobal(QCursor::pos()));
     if(!item) {
         Gui::Selection().rmvPreselect();
@@ -1099,6 +1199,7 @@ bool TaskDressUpParameters::handleEvent(QEvent *e)
     else if (e && e->type() == QEvent::Leave) {
         enteredObject = nullptr;
         timer->stop();
+        Base::StateLocker guard(hoverFromList);
         Gui::Selection().rmvPreselect();
         lightPreviewFace(std::string());
     }

@@ -33,7 +33,9 @@
 # include <TopExp.hxx>
 #endif
 
+#include <App/DocumentObserver.h>
 #include <Gui/Application.h>
+#include <Gui/Control.h>
 #include <Mod/Part/Gui/ReferenceHighlighter.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
 
@@ -91,6 +93,22 @@ bool ViewProviderDressUp::setEdit(int ModNum) {
     } else {
         return inherited::setEdit(ModNum);
     }
+}
+
+bool ViewProviderDressUp::redirectEditingPick(const std::string &subname,
+                                              App::SubObjectT &target) const
+{
+    // "Hover face should resolve the edge name too, which should trigger
+    // edge preselection highlight" (docs/HandsOnQueue.md entry 169): the
+    // view preselects, lights and selects the base's edge for the face, as
+    // if it had been picked
+    if (!isEditingPickSelectable(subname))
+        return false;
+    auto dlg = qobject_cast<TaskDlgDressUpParameters*>(Gui::Control().activeDialog());
+    if (!dlg || dlg->getDressUpView() != this || !dlg->getDressUpParameters())
+        return false;
+    const std::string &prefix = PartDesign::FeatureAddSub::addsubElementPrefix();
+    return dlg->getDressUpParameters()->getPreviewTarget(subname.c_str() + prefix.size(), target);
 }
 
 void ViewProviderDressUp::unsetEdit(int ModNum)

@@ -10,9 +10,15 @@ panel takes a pick of it for one of the reference that made it.
 
 A PartDesign wedge, a fillet of radius 2 on a top edge and a bottom edge;
 the top then collapses to a line, so the top edge's reference is gone and
-its face is kept as last made (FailedShape). In edit. Claims:
-  - the pointer on the bottom edge's fillet face: the preview's face is
-    preselected (the preview takes picks);
+its face is kept as last made (FailedShape). In edit. The reporter, 13:57:
+"Hover face should resolve the edge name too, which should trigger edge
+preselection highlight and edit panel list item hover plus scroll to view.
+Same if preselect edge in 3d view or hover list item, the other two shall
+react". Claims:
+  - the pointer on the bottom edge's fillet face: the base's edge is
+    preselected, and its row shown hovered; off the model, no row;
+  - the base's edge preselected: its row shown hovered, and not once that
+    goes;
   - a click there: the base feature's edge is the selection, the preview's
     face is not, and the bottom edge's row is the one selected;
   - a click on the kept face of the missing top edge: its "?Edge" row is the
@@ -176,6 +182,16 @@ def selected_rows(widget):
     return [it.text(0) for it in widget.selectedItems()]
 
 
+def hovered_rows(widget):
+    """The rows the panel shows as hovered: a background of their own"""
+    out = []
+    for i in range(widget.topLevelItemCount()):
+        item = widget.topLevelItem(i)
+        if item.background(0).style() != Qt.NoBrush:
+            out.append(item.text(0))
+    return out
+
+
 def rows(widget):
     return [widget.topLevelItem(i).text(0) for i in range(widget.topLevelItemCount())]
 
@@ -244,8 +260,25 @@ def run():
         x, y = spot(normal[0])
         move_to(x, y)
         pre = preselected()
-        check("the pointer on the bottom edge's fillet face: the preview's face is preselected",
-              PREFIX in pre, pre)
+        check("the pointer on the bottom edge's fillet face: the base feature's edge is "
+              "preselected (the reporter 13:57: 'hover face should resolve the edge name too')",
+              pre.startswith("Body:Wedge.") and pre.endswith("." + present[0]), pre)
+        check("... and its row is shown hovered", hovered_rows(widget) == [present[0]],
+              hovered_rows(widget))
+        # off the model: nothing preselected, no row hovered
+        move_to(3, 3)
+        check("the pointer off the model: no row hovered", hovered_rows(widget) == [],
+              "%s, preselected %s" % (hovered_rows(widget), preselected()))
+        # the base's edge preselected in the 3D view: its row hovered too
+        FreeCADGui.Selection.setPreselection(
+            FreeCAD.getDocument(DOC).getObject("Body"), "Wedge." + present[0])
+        pump(30)
+        check("the base's edge preselected: its row is shown hovered",
+              hovered_rows(widget) == [present[0]], hovered_rows(widget))
+        FreeCADGui.Selection.clearPreselection()
+        pump(30)
+        check("... and no longer when that goes", hovered_rows(widget) == [], hovered_rows(widget))
+        move_to(x, y)
         click(x, y)
         sel = selection()
         names = [n for _, subs in sel for n in subs]
@@ -261,6 +294,12 @@ def run():
         pump(20)
         face_on(kept.Faces[0])
         x, y = spot(kept.Faces[0])
+        move_to(x, y)
+        pre = preselected()
+        check("the pointer on the missing top edge's kept face: the face itself is preselected",
+              PREFIX in pre, pre)
+        check("... and the '?Edge' row is shown hovered", hovered_rows(widget) == [missing[0]],
+              hovered_rows(widget))
         click(x, y)
         sel = selection()
         check("a click on the missing top edge's kept face: its '?Edge' row is the one selected",

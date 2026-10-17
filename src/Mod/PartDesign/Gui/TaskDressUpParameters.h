@@ -26,6 +26,8 @@
 
 #include <fastsignals/signal.h>
 
+#include <QBrush>
+
 #include <Base/Color.h>
 #include <Gui/TaskView/TaskView.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
@@ -67,6 +69,12 @@ public:
      * getItemElement(). Null for none, or more than one.
      */
     QTreeWidgetItem *getPreviewItem(const char *element);
+    /** The base's edge (face) a present reference names, for \a element of
+     * the preview: what a pick of it is taken for in the 3D view
+     * (ViewProviderDressUp::redirectEditingPick). False for a missing one,
+     * which has none.
+     */
+    bool getPreviewTarget(const char *element, App::SubObjectT &target);
 
 protected Q_SLOTS:
     void onButtonRefAdd(const bool checked);
@@ -116,6 +124,13 @@ protected:
     /// A selection of the preview, taken as one of the row its element
     /// names; false when it is not one
     bool onPreviewSelected(const Gui::SelectionChanges& msg);
+    /** A preselection in the 3D view -- the base's edge, or the preview's
+     * face of a missing one -- lights its row as hovered and its preview
+     * face; the reverse of a hover of the row (onTimer()), entry 169
+     */
+    void onPreselectChanged(const Gui::SelectionChanges& msg);
+    /// Shows \a item as hovered, scrolled into view; null for none
+    void setHoverItem(QTreeWidgetItem *item);
     virtual void changeEvent(QEvent *e) override = 0;
     bool event(QEvent *e) override;
     bool handleEvent(QEvent *e);
@@ -146,6 +161,12 @@ protected:
 
     QTimer *timer = nullptr;
     QObject *enteredObject = nullptr;
+    /// The row shown as hovered for a preselection in the 3D view, and the
+    /// backgrounds it had
+    QTreeWidgetItem *hoverItem = nullptr;
+    std::vector<QBrush> hoverBrushes;
+    /// The panel itself preselects, for a hover of its list
+    bool hoverFromList = false;
 };
 
 /// simulation dialog for the TaskView
@@ -159,6 +180,8 @@ public:
 
     ViewProviderDressUp* getDressUpView() const
     { return static_cast<ViewProviderDressUp*>(vp); }
+    TaskDressUpParameters* getDressUpParameters() const
+    { return parameter; }
 
 public:
     /// is called by the framework if the dialog is accepted (Ok)

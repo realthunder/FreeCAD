@@ -59,6 +59,9 @@ public:
     virtual QString getMenuName() const = 0;
 
     virtual void updateAddSubShapeIndicator();
+    /// A pick of the preview in the edit, for the base's edge a present
+    /// reference names (TaskDressUpParameters::getPreviewTarget)
+    bool redirectEditingPick(const std::string &subname, App::SubObjectT &target) const override;
     virtual void updateData(const App::Property*);
     virtual void attach(App::DocumentObject*);
 
