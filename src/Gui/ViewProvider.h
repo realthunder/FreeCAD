@@ -69,6 +69,7 @@ namespace Base {
 namespace App {
   using Color = Base::Color;
   class PropertyLinkList;
+  class SubObjectT;
 }
 
 class SoGroup;
@@ -590,6 +591,18 @@ public:
      */
     virtual bool isEditingPickSelectable(const std::string &subname) const {
         (void)subname;
+        return false;
+    }
+    /** A pick of this object in edit that the view selects
+     * (isEditingPickSelectable) and that stands for another element: \a
+     * target, a top level object and the sub-name to it, is preselected,
+     * lit and selected in its place (a dress-up's preview face for the
+     * base's edge it was made on, docs/HandsOnQueue.md entry 169). False
+     * to keep the pick as it is.
+     */
+    virtual bool redirectEditingPick(const std::string &subname, App::SubObjectT &target) const {
+        (void)subname;
+        (void)target;
         return false;
     }
     bool isEditing() const;

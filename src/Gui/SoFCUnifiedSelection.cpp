@@ -140,6 +140,9 @@ struct PickedInfo {
     std::string subname;
     // Higher level geometry elements, like Wire, Solid
     std::vector<Data::IndexedName> elements;
+    // The pick names another object's element than the one hit
+    // (ViewProvider::redirectEditingPick): its path is not the hit's
+    bool redirected = false;
 
     PickedInfo()
         :pp(0),vpd(0)
@@ -151,6 +154,7 @@ struct PickedInfo {
         ,vpd(other.vpd)
         ,subname(std::move(other.subname))
         ,elements(std::move(other.elements))
+        ,redirected(other.redirected)
     {}
 
     PickedInfo &operator=(PickedInfo &&other) {
@@ -159,6 +163,7 @@ struct PickedInfo {
         vpd = other.vpd;
         subname = std::move(other.subname);
         elements = std::move(other.elements);
+        redirected = other.redirected;
         return *this;
     }
 
@@ -787,6 +792,18 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
                 if (!vpEditOpen->isEditingPickSelectable(info.subname))
                     continue;
                 editPick = true;
+                // named after another object's element: picked as that
+                App::SubObjectT target;
+                if (vpEditOpen->redirectEditingPick(info.subname, target)) {
+                    auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                            Application::Instance->getViewProvider(target.getObject()));
+                    if (vp) {
+                        info.vpd = vp;
+                        info.subname = target.getSubName();
+                        info.redirected = true;
+                        editPick = false;
+                    }
+                }
             }
             else if (info.vpd == vpParent && !editSub.empty()
                         && boost::starts_with(info.subname, editSub)
@@ -1670,6 +1687,24 @@ bool SoFCUnifiedSelection::Private::setHighlight(PickedInfo &&info) {
     if (!info.ppCopy)
         info.copy();
     const auto &pt = info.pp->getPoint();
+    if (info.redirected && info.vpd) {
+        // lit where the element it names is, not where the pick hit
+        CoinPtr<SoFullPath> path(static_cast<SoFullPath*>(new SoPath(20)));
+        SoDetail *det = nullptr;
+        if (useRenderer())
+            appendDetailPath(path, info.vpd);
+        if (info.vpd->getDetailPath(info.subname.c_str(), path, true, det)
+                && path->getLength()) {
+            bool res = setHighlight(path.get(), det, info.vpd, info.subname.c_str(),
+                                    pt[0], pt[1], pt[2]);
+            delete det;
+            return res;
+        }
+        delete det;
+        // (no path to it: lit where the pick hit, the element named)
+        return setHighlight(static_cast<SoFullPath*>(info.pp->getPath()),
+                nullptr, info.vpd, info.subname.c_str(), pt[0],pt[1],pt[2]);
+    }
     const SoDetail *det = info.pp->getDetail();
     if(det && !Data::hasElementName(info.subname.c_str()))
         det = nullptr;
