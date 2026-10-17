@@ -7605,3 +7605,20 @@ before the 18:06 save (entry 167; identical to the 10-06 .FCBak).
   fillet-hover-outlines-face.py 16 of 16; sketch-constraint-external-pick
   49, sketch-external-both-ways 6, box-selection-gate 6,
   fillet-handle-click-in-view 15, none failed. NOT pushed, NOT staged.
+- 169 reopened by the ruling of 13:57 (a three-way hover sync):
+  `ebc61737c3` (Gui) and `28a48ad695` (PD). The pick resolves itself: the
+  edit's view provider names the base's edge for a present reference's
+  preview face (ViewProvider::redirectEditingPick), so the view
+  preselects, lights and selects the edge; a preselection replaced after
+  the view set it would have been set back by every mouse move. The panel
+  follows the preselection: the base's edge (pointed at, or for its face)
+  shows its row as hovered, scrolled into view, and lights its preview
+  face; a missing reference's kept face does the same for its "?Edge" row.
+  r106 crashed at the first hover: a changed row background is an
+  itemChanged, which the fillet's panel took for an edit of the row; the
+  look is now set with the list's signals blocked. r107 on the real
+  screen: fillet-preview-pick-syncs-list.py 20 of 20, the 160 hover test
+  16 of 16, the four regressions as before. Not measured: the preview face
+  lit for a base edge pointed at in 3D (the same call as the list hover,
+  which the 160 test measures), and the scroll (the test's list is two
+  rows). NOT pushed, NOT staged.
