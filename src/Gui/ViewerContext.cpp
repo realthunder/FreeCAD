@@ -438,6 +438,16 @@ bool EditingRoot::hasSessionNode(SoNode* node) const
                        [node](const SessionNode& entry) { return entry.node == node; });
 }
 
+std::vector<SoSeparator*> EditingRoot::sessionHolders() const
+{
+    std::vector<SoSeparator*> holders;
+    holders.reserve(sessionNodes.size());
+    for (const SessionNode& entry : sessionNodes) {
+        holders.push_back(entry.holder);
+    }
+    return holders;
+}
+
 void EditingRoot::endSession()
 {
     while (!sessionNodes.empty()) {

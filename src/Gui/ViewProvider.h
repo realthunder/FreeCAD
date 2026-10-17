@@ -581,6 +581,17 @@ public:
     virtual ViewProvider *startEditing(int ModNum=0);
     /// Allow disable multi geometry pick on other object when editing
     virtual bool isEditingPickExclusive() const { return false; }
+    /** Whether the view selects a pick of this object in edit, named \a
+     * subname by its getElementPicked(). The view passes over an object in
+     * edit that does not take its picks exclusively, which picks its own
+     * elements itself (a sketch); a view provider names here what it leaves
+     * to the view all the same (a dress-up's preview, docs/HandsOnQueue.md
+     * entry 169).
+     */
+    virtual bool isEditingPickSelectable(const std::string &subname) const {
+        (void)subname;
+        return false;
+    }
     bool isEditing() const;
     void finishEditing();
     /** An undo or redo asked for while this is in edit, before anything

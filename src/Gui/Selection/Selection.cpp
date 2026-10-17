@@ -1799,7 +1799,12 @@ void SelectionSingleton::rmvSelection(const char* pDocName, const char* pObjectN
         // If no sub-element (e.g. Face, Edge) is specified, remove all
         // sub-element selection of the matching sub-object.
 
-        if(!temp.elementName.second.empty()) {
+        // (an element that has no old style name -- a dress-up preview's,
+        // ";AddSub;Face1" -- is named all the same: that one goes, where it
+        // was taken for no element and nothing matched, docs/HandsOnQueue.md
+        // entry 169)
+        const char *element = Data::findElementName(temp.SubName.c_str());
+        if(!temp.elementName.second.empty() || (element && element[0])) {
             if (!boost::equals(It->SubName, temp.SubName))
                 continue;
         } else if (!boost::starts_with(It->SubName,temp.SubName))

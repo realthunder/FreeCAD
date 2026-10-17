@@ -403,6 +403,9 @@ public:
     /// Take it out. Idempotent.
     void removeSessionNode(SoNode* node);
     bool hasSessionNode(SoNode* node) const;
+    /// Each session node's holder, a child of node() with the node as its
+    /// last child: for a pick of them on their own (SoFCUnifiedSelection)
+    std::vector<SoSeparator*> sessionHolders() const;
     //@}
 
     /** The session is over: drop what only a session holds.

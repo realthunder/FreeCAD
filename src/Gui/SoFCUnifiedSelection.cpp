@@ -363,6 +363,8 @@ public:
                             bool singlePick,
                             Filter &filter) const;
 
+    void getPickedInfoInSession(std::vector<PickedInfo> &, Filter &filter) const;
+
     void pickThroughFace(std::vector<PickedInfo> &, Filter &filter) const;
 
     SoPath *pathAboveRoot() const;
@@ -779,13 +781,21 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
         if(!info.vpd->getElementPicked(info.pp,info.subname))
             continue;
 
-        if (vpEditOpen
-                && (info.vpd == vpEditOpen
-                    || (info.vpd == vpParent && !editSub.empty()
-                        && boost::starts_with(info.subname, editSub))))
-            continue;
+        bool editPick = false;
+        if (vpEditOpen) {
+            if (info.vpd == vpEditOpen) {
+                if (!vpEditOpen->isEditingPickSelectable(info.subname))
+                    continue;
+                editPick = true;
+            }
+            else if (info.vpd == vpParent && !editSub.empty()
+                        && boost::starts_with(info.subname, editSub)
+                        && !vpEditOpen->isEditingPickSelectable(
+                            info.subname.substr(editSub.size())))
+                continue;
+        }
 
-        if (info.vpd == vpEdit && vpParent && vpParent != vpEdit) {
+        if ((info.vpd == vpEdit || editPick) && vpParent && vpParent != info.vpd) {
             info.vpd = vpParent;
             info.subname = editSub + info.subname;
         }
@@ -940,6 +950,57 @@ SoFCUnifiedSelection::Private::getPickedInfoOnTop(std::vector<PickedInfo> &ret,
     tmpPath.unrefNoDelete();
 }
 
+void
+SoFCUnifiedSelection::Private::getPickedInfoInSession(std::vector<PickedInfo> &ret,
+                                                      Filter &filter) const
+{
+    // What an edit session hangs beside its own geometry and draws on top
+    // of the scene -- a PartDesign dress-up's preview, which lies inside the
+    // base it is drawn over -- is picked ahead of the scene, as it is
+    // drawn: picked with the rest, the base in front of it always had the
+    // click (docs/HandsOnQueue.md entry 169). Only a hit some view provider
+    // names counts; a node no one picks leaves the pick to the scene.
+    if (!pcViewer || !pcDocument)
+        return;
+    EditingRoot *session = pcDocument->editingRoot();
+    const SoPath *onTop = pcViewer->getGroupOnTopPath();
+    const SoPath *rootPath = pcViewer->getRootPath();
+    if (!session || !session->node() || !onTop || !rootPath
+            || onTop->getLength() <= rootPath->getLength())
+        return;
+    // the view's aux root, which the session root hangs under in each of
+    // its views (View3DInventorViewer::hangEditingRoot)
+    SoNode *aux = onTop->getNode(rootPath->getLength());
+    if (!aux->isOfType(SoGroup::getClassTypeId())
+            || static_cast<SoGroup*>(aux)->findChild(session->node()) < 0)
+        return;
+
+    static FC_COIN_THREAD_LOCAL SoTempPath tmpPath(20);
+    tmpPath.ref();
+    for (SoSeparator *holder : session->sessionHolders()) {
+        SoNode *node = holder->getNumChildren()
+            ? holder->getChild(holder->getNumChildren() - 1) : nullptr;
+        if (!node || !node->isOfType(SoFCPathAnnotation::getClassTypeId()))
+            continue;
+        tmpPath.truncate(0);
+        tmpPath.append(rootPath);
+        tmpPath.append(aux);
+        tmpPath.append(session->node());
+        tmpPath.append(holder);
+        tmpPath.append(node);
+        this->rayPickAction.apply(&tmpPath);
+        std::vector<PickedInfo> hits;
+        getPickedInfo(hits, this->rayPickAction.getPrioPickedPointList(), true, true, filter);
+        this->rayPickAction.cleanup();
+        if (!hits.empty() && hits.front().vpd) {
+            ret = std::move(hits);
+            break;
+        }
+    }
+    tmpPath.truncate(0);
+    tmpPath.unrefNoDelete();
+}
+
 std::vector<PickedInfo>
 SoFCUnifiedSelection::Private::getPickedList(SoHandleEventAction* action,
                                              bool singlePick) const
@@ -1022,7 +1083,13 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
             Gui::sectionStyle(viewobject, "NoOnTop",
                               ViewParams::getNoSectionOnTop()));
 
-    getPickedInfoOnTop(ret, singlePick, filter);
+    // (first: the pass on top asks the preselected object before anything,
+    // and the base under the preview is that one as the pointer comes
+    // over it)
+    if (singlePick && !pickBackFace)
+        getPickedInfoInSession(ret, filter);
+    if (ret.empty())
+        getPickedInfoOnTop(ret, singlePick, filter);
 
     this->rayPickAction.setResetClipPlane(false);
 
