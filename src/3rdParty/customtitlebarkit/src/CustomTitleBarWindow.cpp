@@ -300,6 +300,7 @@ void CustomTitleBarWindow::setMode(Mode newMode)
         return;
 
     const bool wasVisible = isVisible();
+    const bool wasActive = isActiveWindow();
 
     if (newMode == Mode::Custom) {
         d->mode = Mode::Custom;
@@ -311,9 +312,15 @@ void CustomTitleBarWindow::setMode(Mode newMode)
     }
 
     // Both directions run through setWindowFlags in the platform backend, and
-    // Qt hides a window whose flags change. Put it back the way it was found.
-    if (wasVisible && !isVisible())
+    // Qt hides a window whose flags change. Put it back the way it was found,
+    // the active window again if it was: shown again it is a new native
+    // window, which only a window manager would activate -- with none, as
+    // under Xvfb, nothing had the focus after a theme switched the title bar.
+    if (wasVisible && !isVisible()) {
         show();
+        if (wasActive)
+            activateWindow();
+    }
 
     Q_EMIT modeChanged(d->mode);
 }
