@@ -173,6 +173,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-17 12:33: entry 169 -- the build session's readings a-f, in r103; a 3D hover
+does not resolve (only a selection syncs), the reporter's "(pre)selected"
+to be confirmed.** Under the entry.
+
 **2026-10-17 12:19: STAGED 07:41:20 CLEAN -- `.conda/user-app/INSTALLED.txt`: fcad
 `9f65f5f929` (code = pushed `b76481281e`), dirty False, OCCT `a81d25f148`,
 coin `d2da5cc93`, FreeCADGui 03:25:38 (build r102); FreeCAD.exe present
@@ -3464,7 +3468,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 166 | 2026-10-16 | a defect: after a REVERT of the opened `scanner.FCStd`, the FILE BLOB MANAGER warns that INCLUDED FILES are MISSING from the document -- "this shouldn't happen" | OPEN; READ by the note-taker in the reporter's LIVE console on their word (the MCP log, nothing run in the session): the first open 17:36 and its recompute -- NO such warning; the revert ~17:59:35, then in its recompute FOUR hashes "is missing from the document" (FileBlobManager.cpp 2203, dispatchPending), TWICE, 17:59:52 and 17:59:57 (one "named by 3 properties"); the console copy at dl\handson\2026-10-16\e166-live-console-600.txt. 18:04 the build session: the SAME four warnings, TWICE, in the FIRST recompute after a FRESH HEADLESS open of a scanner copy (r86, ~17:40, no revert) -- so NOT the revert's doing; the reporter's GUI first open at 17:36 printed NONE (the note-taker re-checked the live copy: all 8 lines are after the revert); why the GUI first open is silent not known. 18:10 ANSWERED: the recompute after the revert BY HAND; NOTHING looked wrong. 20:39 CAUSE found and FIXED by the build session (r93, verified, NOT committed): two binders (Binder, Binder012) copy objects into TEMPORARY documents during the recompute (copy-on-change); the copies name a library material card's MaterialX files the copy stream does not carry; fix: a file missing at the end of a copy is taken from another open document's store -> 0 warnings on the scanner copy (8 before); the recompute, not the revert. 21:00 DONE LOCALLY `294697011c`, NOT pushed, NOT staged (scanner copy: 0 missing-file warnings). 2026-10-17 00:00 QUESTIONED by the reporter: "Entry 166, elaborate your fix. It doesn't sound right. How can you look for files in another document, by content hash?" -- READ in the source: yes, by content hash across every open document's store; the cause (why the copy stream leaves the files out) is NOT fixed. 2026-10-17 00:07 the build session agrees: `294697011c` is a fallback that hides the symptom; NEW: the four hashes are NOT in the pre-save file at all -- made in the session from the material library on this machine (PropertyMaterial::holdMaterialXBlobs); which property of the copy names them, and what the fragment carries, not pinned; next after r96: a probe, then the export fix, the fallback removed unless the reporter wants it kept. 2026-10-17 00:14 the fallback RULED: "Keep as safe net, but print warning". 2026-10-17 00:18 the safety net warns (not committed, r97): "Included file <hash> was missing from the document; taken from open document '<doc>' for <property full name>", once per file per referrer; r97 runs the probe on the pre-save copy. 2026-10-17 00:39 CORRECTED by the build session (r97 probe): the four files are NOT MaterialX but SHAPE files of objects Binder012 copies (Sketch018.Shape, Sketch018.InternalShape, Pad012.AddSubShape, Pad012.SuppressedShape), made in the session; something writes them by hash into the copy without the file (schema 4 should write them inline); r98 traces which Save branch. 2026-10-17 02:01 CAUSE FOUND (r99 trace): the export reset only the DESTINATION document's file manager to schema 4, while the copied objects' properties answer to the SCANNER's manager, still in the shared-file format of its last save -> the shapes written as hash references, the fragment carrying no file; FIX in r100: exportObjects begins the save on every exported object's own document manager; the safety net stays and warns. 2026-10-17 02:04 the build session: GENERAL -- any copyObject from a document last saved at schema 5 wrote shapes and included files as hash references the copy did not carry; the note-taker's reading: in the reporter's STAGED copy (no fallback) every such copy lost them, with the "is missing" warning; whether a user file was hit NOT checked; new test FileBlobs.testCopyFromASavedDocumentCarriesItsContent. 2026-10-17 03:40 DONE LOCALLY `9b2db5555f` (r102), NOT pushed, NOT staged: exportObjects begins the save on every exported object's own document manager, a copy carries its shapes and included files; the fallback stays and warns (file, source document, property); FileBlobs 96 OK with testCopyFromASavedDocumentCarriesItsContent; the scanner copy's first recompute warns of no missing file. 2026-10-17 07:39 PUSHED 07:39:07 (origin `b76481281e`) on the reporter's "Push and restage" (said to the build session; the note-taker did not hear it); the restage from build r102 RUNNING. 2026-10-17 12:19 STAGED 07:41:20 CLEAN (INSTALLED.txt: fcad `9f65f5f929`, code = pushed `b76481281e`, dirty False, FreeCADGui 03:25:38 = build r102; FreeCAD.exe present, 469504 bytes) |
 | 167 | 2026-10-16 | a defect (CRITICAL by the reporter's word): `scanner.FCStd` was SAVED, "someone (not me)"; check whether there is a transaction log inside; find new code that may cause it | OPEN; READ by the note-taker (the file and the reporter's console logs, read only): saved 18:06:52 (LastModifiedDate 10:06:52Z), schema 4 -> 5, 9.2 MB; it HOLDS a history (blobs/History.db, zstd): ONE session, the reporter's own staged FreeCAD (build hash b076aae675) opened 17:36:03, ONE save at txn 21 (18:06:52); the file was still schema 4 at the revert's read 17:59:07, so ONE save, not several; nothing in the console at 18:06:52; NO code found that saves unasked. 18:18 the 18:06:05 step READ: ONE op, a VIEW property ShowFrames set (a TechDraw page's frames toggled), 47 s before the save; no TechDraw code that saves found. 18:19 the build session (read only): NO save call added in src since 10-13 except tests; its probes open COPIES headless (FreeCADCmd) and none ran at 18:06; the session's "closed" time is written when the log is copied into the saved file, not a close -> the trigger is a SAVE ACTION in the GUI between 18:06:05 and 18:06:52; the question to the reporter: what was done in those 47 s, which window was active, did a box appear. 18:27 the PRE-SAVE content is NOT LOST: byte-identical (md5 bb568db2683b3acc217d534249778cfd, 6119171 bytes) to scanner.20261006-091732.FCBak beside it and to the build session's probe copy of 17:39 -- checked by the note-taker; the build session's 160 probes use the pre-save copy from now on. 18:33 the reporter: does NOT remember hitting any save button or anything, and saw NO format warning box; the note-taker READ: by design (the reporter's own rule of 2026-09-28) the old format is told ONCE, at the open, in the report view; a plain save then writes schema 5 with NO box -- so no box does not rule out a plain save |
 | 168 | 2026-10-16 | a change request FOR DISCUSSION: how to let the user know the RISK of saving in the NEW format, and yet ENCOURAGE it for the transaction log; eventually a NEW EXTENSION for the new format -- "one of the branch already did that" | OPEN, a discussion; the branch is `origin/Branding` (5 commits beyond LinkVibe, 10-14, not merged): schema 5 = .TStd; a plain save of an opened .FCStd writes Part.TStd BESIDE it and leaves the .FCStd as it was, with one dialog -- by the note-taker's reading it would have spared entry 167's overwrite; the note-taker's proposal under the entry. 19:00 RULED: WAIT for the other box to merge Branding first; then, on a SAVE of a file with the OLD extension, a DIALOG that ASKS -- all the facts, ENCOURAGING the new format, ASSURING the old file stays and they can save back to the old format; a "don't ask again"; when it is clicked, a dialog telling them Save As saves the new format |
-| 169 | 2026-10-17 | a change request: ALL DRESS-UP PREVIEW shapes PICKABLE in the 3D view (the unpickable style lifted); a (pre)selection there RESOLVES to the BASE EDGE's name, a missing element to its ?Edge name, so the EDIT PANEL's LIST ITEM selection SYNCS | OPEN; said to the note-taker 12:18. 12:19 the build session reading the dress-up preview code; its readings of a-f to come before it builds |
+| 169 | 2026-10-17 | a change request: ALL DRESS-UP PREVIEW shapes PICKABLE in the 3D view (the unpickable style lifted); a (pre)selection there RESOLVES to the BASE EDGE's name, a missing element to its ?Edge name, so the EDIT PANEL's LIST ITEM selection SYNCS | OPEN; said to the note-taker 12:18. 12:19 the build session reading the dress-up preview code; its readings of a-f to come before it builds. 2026-10-17 12:33 the build session's readings of a-f, in build r103, nothing committed: a face resolves to the row its dress-up made, edges/vertices through their faces when one row; outside add mode a click selects (present -> the base edge, missing -> its ?Edge row), in add mode it toggles; a 3D HOVER does NOT resolve or light a row (only a selection syncs) -- the reporter wrote "(pre)selected", to be confirmed |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -23252,6 +23256,45 @@ e. whether `dc5ef18848`'s AnySelectStyle stays, once the preview is
    pickable.
 f. outside the edit: the dress-up's own shape as before (read as only the
    edit's preview is meant).
+
+**2026-10-17 12:33, the build session (relayed): its readings of a-f, as built in r103
+(building), nothing committed.**
+a. A preview FACE resolves to the row whose dress-up made it -- first by
+   the faces the feature keeps per reference (a fillet's; a missing one's
+   as last made), else by the history of the feature's face back to the
+   base element (a chamfer edge, a draft/thickness face). A preview EDGE
+   or VERTEX resolves through the faces it lies on, only when they name
+   ONE row. No row, or two: the pick stays as it is, the list unchanged.
+   Carried-over base faces are not in the preview at all (it holds the
+   made faces and the failed ones only).
+b. OUTSIDE the add mode a click only SELECTS: a present edge's pick is
+   replaced by the base edge's selection (it lights on the base, its row
+   selected -- the same path as a click on the base edge); a missing one
+   selects its "?Edge" row and the preview face stays the selection. IN
+   the add mode it TOGGLES, as a click on the base edge does (the row and
+   the reference go). The add mode's selection gate now lets the preview
+   through (else a click on the preview, drawn over the base edges, would
+   go nowhere).
+c. Draft/thickness: the same path, by history to the base face the list
+   names.
+d. A HOVER in 3D preselects the preview face itself (pickable now); it
+   does NOT light a list row nor preselect the base edge -- doing that from
+   a preselection message "would fight the view's own preselection on
+   every mouse move". Only a SELECTION syncs the list.
+e. AnySelectStyle STAYS (general; 160's list-hover outline still uses it).
+f. Outside the edit unchanged: the preview is pickable only between
+   setEdit and unsetEdit of a dress-up.
+Core change: the 10-02 rule that the view passes over the object in edit
+(for the sketcher's external tool) now asks the view provider first
+(ViewProvider::isEditingPickSelectable), which the add/sub preview answers
+for its own elements only.
+The note-taker's reading: d differs from the reporter's words -- "When
+(pre)selected in 3d view, resolve the element name to base edge name"
+names the PRESELECTION too. The build session resolves only a selection;
+a hover shows the preview face's own name. Whether a hover should resolve
+(at least its NAME, e.g. in the status bar, without lighting the base
+edge or the row) is the reporter's -- NOT ANSWERED. b's add-mode toggle
+from the preview is the build session's choice (point b of 12:18).
 
 ## Inbox
 
