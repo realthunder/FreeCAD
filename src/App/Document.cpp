@@ -12874,8 +12874,10 @@ Document::ImportResult Document::_importState(const std::string& path, const std
     keep["branch"] = std::string();
     if (result.independent)
         keep["independent"] = true;
-    // A state that did not come is asked for again.
-    keep["state"] = result.stoppedAt ? kept.value("state", std::string()) : hash;
+    // A state that did not come is asked for again; on a first import there
+    // is no earlier one, and `kept` is null.
+    keep["state"] = !result.stoppedAt ? hash
+        : kept.is_object() ? kept.value("state", std::string()) : std::string();
     auto list = nlohmann::json::array();
     for (const auto& kv : ids)
         list.push_back({kv.first, kv.second});
