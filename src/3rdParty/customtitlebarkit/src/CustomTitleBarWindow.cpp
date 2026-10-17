@@ -296,6 +296,10 @@ CustomTitleBarWindow::~CustomTitleBarWindow() = default;
 void CustomTitleBarWindow::setMode(Mode newMode)
 {
     // LOCAL DIVERGENCE from FreeCAD/FreeCAD#26766 -- see the header.
+    // The environment's override holds here as at construction: a theme
+    // switching the title bar on undid it at the first preference pack.
+    if (newMode == Mode::Custom && qgetenv("CUSTOMTITLEBARKIT_MODE").toLower() == "native")
+        newMode = Mode::Native;
     if (d->mode == newMode)
         return;
 

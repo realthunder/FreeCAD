@@ -2150,6 +2150,13 @@ fc_add_gui_test(GuiPreferencesEnterInAnEditBox_tests_run
 fc_add_gui_test(GuiOverlayTitleButtonsTheme_tests_run
                 overlay-title-buttons-theme.py
                 --timeout 240)
+# The Light and Dark packs switch the window to the custom title bar, which
+# makes it a new native window. Under Xvfb, with no window manager, getting it
+# active again is a race the X server's focus timestamps decide, lost under
+# load: no overlaid panel had the focus and none showed its title. The
+# window's own title bar is not what this test is about.
+set_tests_properties(GuiOverlayTitleButtonsTheme_tests_run PROPERTIES ENVIRONMENT
+                     "FC_BUILD=${CMAKE_BINARY_DIR};CUSTOMTITLEBARKIT_MODE=native")
 
 # The navigation cube slides along its edge, out from under an overlaid dock
 # or a task panel shown over its view, and back when the panel goes; the
