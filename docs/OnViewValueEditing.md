@@ -587,8 +587,13 @@ toggled and the value grows again the other way, instead of stopping at
 its minimum. For every handle whose feature has a Reversed: Pad/Pocket's
 length, Revolution/Groove's angle, Hole's depth, Draft's angle, Thickness's
 value, Helix's height. A handle with nothing to reverse (a primitive's
-size) stops at its minimum, as now. The drag stays one undo step. This
-belongs to set A's handles and is built with it, not with set B.
+size) stops at its minimum, as now. Undo is as for any drag on these
+panels: they have no undo step of their own per drag (only the fillet's
+panel does, entry 136), so a drag and its reversal go into the edit's one
+transaction. A drag cancelled with Escape or another button turns the
+feature back and writes the value back. Only the first side's handle
+reverses; a second side's (Length 2, Angle 2) stops at its minimum.
+BUILT 2026-10-18 (`64766eb4ac`, `b8fdb0da09`) with set A's handles.
 
 ### 7.6 For the reporter
 
