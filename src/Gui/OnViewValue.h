@@ -31,6 +31,7 @@
 #include <QString>
 #include <fastsignals/signal.h>
 
+#include <Base/Matrix.h>
 #include <Base/Vector3D.h>
 #include <FCGlobal.h>
 
@@ -44,6 +45,8 @@ namespace Gui
 
 class EditableDatumLabel;
 class Gizmo;
+class GizmoContainer;
+class ViewProvider;
 class QuantitySpinBox;
 class ViewerContext;
 
@@ -110,8 +113,19 @@ public:
     void clearHandles(int index);
     /// Where a handle stands, in world coordinates: its label goes beside it
     void setHandleAnchor(Gizmo* handle, const Base::Vector3d& world);
+    /** Every handle's anchor where the handle stands: its place in its
+     * container's frame, which \a toWorld turns into the world's
+     * (GizmoContainer::getWorldMatrix). For a feature whose handles stand
+     * where their labels go.
+     */
+    void placeAnchors(const Base::Matrix4D& toWorld);
     /// What the menu of the value at \a index offers
     void setMenu(int index, MenuProvider provider);
+    /** The value at \a index is not used by the feature now -- a pad's second
+     * length while it has one side: no label, passed over by Tab, and not
+     * the active one. Its handles are the feature's to hide.
+     */
+    void setHidden(int index, bool hidden);
     /** The group of the value at \a index, 0 for none: while a value is
      * active, the handles of every value of its group are highlighted too
      * (docs/OnViewValueEditing.md 6.1)
@@ -133,6 +147,13 @@ public:
 
     /// Show the values in \a view; null takes them out of the view it had.
     void attach(ViewerContext* view);
+    /** Show the values in the view \a vp is edited in, place the handles'
+     * anchors from \a container (placeAnchors) when there is one, and
+     * restate the labels. A panel calls it once made and again after the
+     * events of the moment, as the view is told of the edit after the panel
+     * is made.
+     */
+    void attachToEdit(const ViewProvider* vp, const GizmoContainer* container);
     ViewerContext* getView() const;
 
     /// Restate every label from its box -- after a recompute, say.

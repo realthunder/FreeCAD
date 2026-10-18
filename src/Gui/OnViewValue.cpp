@@ -36,6 +36,7 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Expression.h>
+#include <App/PropertyUnits.h>
 #include <Base/Placement.h>
 #include <Base/Quantity.h>
 
@@ -47,6 +48,7 @@
 #include "SoDatumLabel.h"
 #include "SpinBox.h"
 #include "ViewerContext.h"
+#include "ViewProvider.h"
 #include "Inventor/Draggers/Gizmo.h"
 
 using namespace Gui;
@@ -61,6 +63,8 @@ struct OnViewValueSet::Entry
     std::vector<Base::Vector3d> anchors;
     MenuProvider menu;
     int group = 0;
+    /// Not used by the feature now: no label, passed over by Tab
+    bool hidden = false;
     QMetaObject::Connection boxConnection;
     std::unique_ptr<EditableDatumLabel> label;
 };
@@ -92,6 +96,20 @@ bool startsNumber(const QKeyEvent* event)
     const QChar c = text.at(0);
     return c.isDigit() || c == QLatin1Char('-') || c == QLatin1Char('+')
         || c == QLatin1Char('.') || c == QLatin1Char(',');
+}
+
+/// A box's value with its unit. A box a form model made (Gui::Fw) may hold
+/// its unit in the model only: the property it is bound to has it (entry
+/// 170, a pad's length read "Length 5").
+Base::Quantity quantityOf(const QuantitySpinBox* box)
+{
+    Base::Quantity value = box->value();
+    if (value.getUnit().isEmpty() && box->isBound()) {
+        if (auto prop = dynamic_cast<App::PropertyQuantity*>(box->boundPath().getProperty())) {
+            value.setUnit(prop->getUnit());
+        }
+    }
+    return value;
 }
 
 /// The camera's turn as a placement's rotation: a plane facing the camera
@@ -249,6 +267,36 @@ void OnViewValueSet::setHandleAnchor(Gizmo* handle, const Base::Vector3d& world)
     }
 }
 
+void OnViewValueSet::placeAnchors(const Base::Matrix4D& toWorld)
+{
+    for (auto& entry : entries) {
+        for (std::size_t i = 0; i < entry->handles.size(); ++i) {
+            const SbVec3f pos = entry->handles[i]->getDraggerPlacement().pos;
+            entry->anchors[i] = toWorld * Base::Vector3d(pos[0], pos[1], pos[2]);
+        }
+    }
+    if (activeHandle) {
+        placeLabels();
+    }
+}
+
+void OnViewValueSet::setHidden(int index, bool hidden)
+{
+    if (index < 0 || index >= count() || entries[index]->hidden == hidden) {
+        return;
+    }
+    entries[index]->hidden = hidden;
+    if (hidden && typing == index) {
+        endTyping(false);
+    }
+    if (hidden && active == index) {
+        setActive(-1);
+        return;
+    }
+    showLabels();
+    placeLabels();
+}
+
 void OnViewValueSet::setMenu(int index, MenuProvider provider)
 {
     if (index >= 0 && index < count()) {
@@ -362,6 +410,19 @@ void OnViewValueSet::attach(ViewerContext* newView)
     placeLabels();
 }
 
+void OnViewValueSet::attachToEdit(const ViewProvider* vp, const GizmoContainer* container)
+{
+    if (vp) {
+        if (auto editView = vp->getEditViewer()) {
+            attach(editView);
+        }
+    }
+    if (container) {
+        placeAnchors(container->getWorldMatrix());
+    }
+    refresh();
+}
+
 void OnViewValueSet::makeLabels()
 {
     for (auto& entry : entries) {
@@ -396,7 +457,8 @@ void OnViewValueSet::showLabels()
         if (!label) {
             continue;
         }
-        const bool shown = entries[i]->place == Place::TopMiddle || i == active;
+        const bool shown =
+            !entries[i]->hidden && (entries[i]->place == Place::TopMiddle || i == active);
         if (shown && !label->isActive()) {
             label->activate();
         }
@@ -427,6 +489,9 @@ void OnViewValueSet::placeLabels()
             continue;
         }
         SbVec2s pixel;
+        if (entry->hidden) {
+            continue;
+        }
         if (entry->place == Place::TopMiddle) {
             // One under the other, from the top middle down
             pixel = SbVec2s(short(size[0] / 2), short(size[1] - int((TopMargin + row * TopMargin) * ratio)));
@@ -462,7 +527,7 @@ void OnViewValueSet::updateLabel(int index)
     if (!entry->label || !entry->box || entry->label->isInEdit()) {
         return;
     }
-    const Base::Quantity value = entry->box->value();
+    const Base::Quantity value = quantityOf(entry->box);
     // "Radius 2 mm", not "Radius 2.00 mm" (as the omni search writes it)
     QString text = trimTrailingZeros(QString::fromStdString(value.getUserString()), QLocale());
     if (!entry->title.isEmpty()) {
@@ -524,8 +589,11 @@ void OnViewValueSet::setActive(int index, Gizmo* handle)
     if (index < -1 || index >= count()) {
         index = -1;
     }
-    // A value an expression drives is not typed in the view
-    if (index >= 0 && entries[index]->box && entries[index]->box->hasExpression()) {
+    // A value an expression drives is not typed in the view, nor one the
+    // feature does not use now
+    if (index >= 0
+        && ((entries[index]->box && entries[index]->box->hasExpression())
+            || entries[index]->hidden)) {
         index = -1;
     }
     if (typing >= 0 && typing != index) {
@@ -614,7 +682,7 @@ bool OnViewValueSet::startTyping(int index, QKeyEvent* first)
     }
     typing = index;
     EditableDatumLabel* label = entry->label.get();
-    const Base::Quantity value = entry->box->value();
+    const Base::Quantity value = quantityOf(entry->box);
     // An open label is one undo step, however often Enter commits in it
     Q_EMIT stepBegun();
     // This set's filter on the label's box, ahead of the label's own: Enter,
@@ -803,7 +871,8 @@ void OnViewValueSet::moveActive(bool back)
         else {
             index = (index + (back ? count() - 1 : 1)) % count();
         }
-        if (entries[index]->box && !entries[index]->box->hasExpression()) {
+        if (entries[index]->box && !entries[index]->box->hasExpression()
+            && !entries[index]->hidden) {
             setActive(index);
             return;
         }

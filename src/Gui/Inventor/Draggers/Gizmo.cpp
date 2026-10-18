@@ -1302,6 +1302,7 @@ void GizmoContainer::attachViewer(Gui::ViewerContext* viewer, Base::Placement& o
     setUpAutoScale(viewer->getSoRenderManager()->getCamera());
 
     auto mat = origin.toMatrix();
+    this->origin = mat;
 
     // Upstream also makes `origin` the document's editing transform. Here the
     // edit path has already set that transform for the object being edited,
@@ -1309,6 +1310,18 @@ void GizmoContainer::attachViewer(Gui::ViewerContext* viewer, Base::Placement& o
     // node is placed.
     So3DAnnotation* annotation = SO_GET_ANY_PART(this, "annotation", So3DAnnotation);
     viewer->setupEditingRoot(annotation, &mat);
+}
+
+Base::Matrix4D GizmoContainer::getWorldMatrix() const
+{
+    Base::Matrix4D mat;
+    if (auto vp = viewProvider.get()) {
+        if (auto doc = vp->getDocument()) {
+            mat = doc->getEditingTransform();
+        }
+    }
+    mat *= origin;
+    return mat;
 }
 
 void GizmoContainer::setUpAutoScale(SoCamera* cameraIn)

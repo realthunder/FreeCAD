@@ -39,6 +39,7 @@
 #include <QString>
 
 #include <Base/Color.h>
+#include <Base/Matrix.h>
 #include <Base/Placement.h>
 #include <Gui/DocumentObserver.h>
 #include <Gui/InputHint.h>
@@ -430,6 +431,11 @@ public:
     /// Take out and delete a gizmo of this container
     void removeGizmo(Gui::Gizmo* gizmo);
     void attachViewer(Gui::ViewerContext* viewer, Base::Placement& origin);
+    /** The gizmos' frame in world coordinates: the document's editing
+     * transform and the offset from it attachViewer() was given -- where a
+     * value's label beside its handle goes (OnViewValueSet::placeAnchors)
+     */
+    Base::Matrix4D getWorldMatrix() const;
     void setUpAutoScale(SoCamera* cameraIn);
     void calculateScaleAndOrientation();
 
@@ -456,6 +462,8 @@ private:
     SoFieldSensor cameraSensor;
     SoFieldSensor cameraPositionSensor;
     WeakPtrT<ViewProviderDragger> viewProvider;
+    /// The offset from the editing transform attachViewer() was given
+    Base::Matrix4D origin;
 
     void addGizmo(Gizmo* gizmo);
 
