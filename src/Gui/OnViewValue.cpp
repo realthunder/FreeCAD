@@ -166,9 +166,20 @@ void OnViewValueSet::setupHandle(int index, Gizmo* handle)
         self->highlight();
     });
     // A drag is one undo step (entry 136)
-    handle->setDragCallback([self = QPointer<OnViewValueSet>(this), handle](Gizmo::DragEvent event) {
+    handle->setDragCallback([self = QPointer<OnViewValueSet>(this), index, handle](
+                                Gizmo::DragEvent event) {
         if (!self) {
             return;
+        }
+        // A cancelled drag put the box back without a word: its owner writes
+        // the property from the box's signal, unless it rolls the drag back
+        // itself
+        if (event == Gizmo::DragEvent::Cancelled && self->cancelWritesBack
+            && index < self->count()) {
+            if (QuantitySpinBox* box = self->entries[index]->box) {
+                Q_EMIT box->valueChanged(box->value());
+                Q_EMIT box->valueChanged(box->value().getValue());
+            }
         }
         switch (event) {
             case Gizmo::DragEvent::Started:

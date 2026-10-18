@@ -1005,7 +1005,11 @@ SoFCUnifiedSelection::Private::getPickedInfoInSession(std::vector<PickedInfo> &r
         tmpPath.append(session->node());
         tmpPath.append(holder);
         tmpPath.append(node);
+        // the preview stays unpickable to the scene's pick, by which the
+        // handles drawn over it take a press (entry 170)
+        this->rayPickAction.setPickUnpickable(true);
         this->rayPickAction.apply(&tmpPath);
+        this->rayPickAction.setPickUnpickable(false);
         std::vector<PickedInfo> hits;
         getPickedInfo(hits, this->rayPickAction.getPrioPickedPointList(), true, true, filter);
         this->rayPickAction.cleanup();
@@ -3850,7 +3854,9 @@ void SoFCSelectionRoot::pick(SoPickAction * action) {
 
 void SoFCSelectionRoot::rayPick(SoRayPickAction * action) {
     if(!ViewParams::getOverrideSelectability()
-            && selectionStyle.getValue() == Unpickable)
+            && selectionStyle.getValue() == Unpickable
+            && !(action->isOfType(SoFCRayPickAction::getClassTypeId())
+                 && static_cast<SoFCRayPickAction*>(action)->pickUnpickable()))
         return;
     auto stack = beginAction(action);
     if (!stack)

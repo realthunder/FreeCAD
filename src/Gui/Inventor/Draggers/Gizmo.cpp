@@ -148,6 +148,33 @@ void Gizmo::setDraggerPlacement(const Base::Vector3d& pos, const Base::Vector3d&
     setDraggerPlacement(Base::convertTo<SbVec3f>(pos), Base::convertTo<SbVec3f>(dir));
 }
 
+double Gizmo::reverseIfPast(double value)
+{
+    if (!reverseCallback) {
+        return value;
+    }
+    // Over the start one way or the other: the feature turned, or back
+    const bool past = value < 0.0;
+    if (past != reversedInDrag && reverseCallback()) {
+        reversedInDrag = past;
+    }
+    return reversedInDrag ? -value : value;
+}
+
+bool Gizmo::endReverse(bool cancelled)
+{
+    const bool turned = reversedInDrag;
+    if (turned && cancelled && reverseCallback) {
+        reverseCallback();
+    }
+    reversedInDrag = false;
+    // Left where it was while the drag had the feature turned
+    if (turned && replaceCallback) {
+        replaceCallback();
+    }
+    return turned;
+}
+
 bool Gizmo::isDelayedUpdateEnabled()
 {
     return MiscParams::getDelayedGizmoUpdate();
@@ -619,6 +646,7 @@ void LinearGizmo::draggingStarted()
     hasDragged = false;
     dragging = true;
     dragCancelled = false;
+    reversedInDrag = false;
     notifyDrag(DragEvent::Started);
     dragger->translationIncrementCount.setValue(0);
 
@@ -629,8 +657,8 @@ void LinearGizmo::draggingStarted()
 
 void LinearGizmo::draggingFinished()
 {
-    dragging = false;
     if (dragCancelled) {
+        dragging = false;
         // put back at the cancel already; nothing to commit or activate
         dragCancelled = false;
         if (isDelayedUpdateEnabled()) {
@@ -638,6 +666,12 @@ void LinearGizmo::draggingFinished()
         }
         return;
     }
+    // Where the turned feature puts the handle, the arrow as long as the
+    // value the other way
+    if (endReverse(false)) {
+        setDragLength(property->value().getValue());
+    }
+    dragging = false;
     if (isDelayedUpdateEnabled()) {
         property->blockSignals(false);
         property->valueChanged(property->value().getValue());
@@ -672,6 +706,8 @@ void LinearGizmo::cancelDrag()
         const QSignalBlocker blocker(property);
         property->setValue(initialValue);
     }
+    // a feature the drag turned, turned back
+    endReverse(true);
     setDragLength(initialValue);
     notifyDrag(DragEvent::Cancelled);
 }
@@ -695,10 +731,13 @@ void LinearGizmo::draggingContinued()
         value = snapToStep(value, baseStep * getCoarseLinearSnapMultiplier());
     }
 
+    // Back past the start: the feature turns, and the value grows again
+    value = reverseIfPast(value);
     value = std::clamp(value, property->minimum(), property->maximum());
 
     property->setValue(value);
-    setDragLength(value);
+    // the arrow where the pointer is, behind its start once turned
+    setDragLength(reversedInDrag ? -value : value);
 }
 
 
@@ -923,6 +962,7 @@ void RotationGizmo::draggingStarted()
     hasDragged = false;
     dragging = true;
     dragCancelled = false;
+    reversedInDrag = false;
     notifyDrag(DragEvent::Started);
     dragger->rotationIncrementCount.setValue(0);
 
@@ -933,14 +973,20 @@ void RotationGizmo::draggingStarted()
 
 void RotationGizmo::draggingFinished()
 {
-    dragging = false;
     if (dragCancelled) {
+        dragging = false;
         dragCancelled = false;
         if (isDelayedUpdateEnabled()) {
             property->blockSignals(false);
         }
         return;
     }
+    // Where the turned feature puts the handle, the arc as wide as the value
+    // the other way
+    if (endReverse(false)) {
+        setRotAngle(property->value().getValue());
+    }
+    dragging = false;
     if (isDelayedUpdateEnabled()) {
         property->blockSignals(false);
         property->valueChanged(property->value().getValue());
@@ -972,6 +1018,8 @@ void RotationGizmo::cancelDrag()
         const QSignalBlocker blocker(property);
         property->setValue(initialValue);
     }
+    // a feature the drag turned, turned back
+    endReverse(true);
     setRotAngle(initialValue);
     notifyDrag(DragEvent::Cancelled);
 }
@@ -997,10 +1045,13 @@ void RotationGizmo::draggingContinued()
         value = snapToStep(value, getCoarseRotationSnapMultiplier());
     }
 
+    // Back past the start: the feature turns, and the angle grows again
+    value = reverseIfPast(value);
     value = clampDragAngle(value, property->minimum(), property->maximum(), period);
 
     property->setValue(value);
-    setRotAngle(value);
+    // the arc where the pointer is, behind its start once turned
+    setRotAngle(reversedInDrag ? -value : value);
 }
 
 void RotationGizmo::orientAlongCamera(SoCamera* camera)

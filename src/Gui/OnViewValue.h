@@ -126,6 +126,16 @@ public:
      * the active one. Its handles are the feature's to hide.
      */
     void setHidden(int index, bool hidden);
+    /** Whether a drag cancelled by Escape or another button writes the
+     * value back (the default): the handle puts its box back silently, and
+     * the box's signal is given again so that its owner writes the
+     * property. Off for an owner that rolls the drag back itself, from
+     * stepEnded(true) -- the fillet's held undo step.
+     */
+    void setCancelWritesBack(bool on)
+    {
+        cancelWritesBack = on;
+    }
     /** The group of the value at \a index, 0 for none: while a value is
      * active, the handles of every value of its group are highlighted too
      * (docs/OnViewValueEditing.md 6.1)
@@ -225,6 +235,7 @@ private:
     /// on some releases (Escape leaves the edit, ViewProvider::eventCallback)
     std::vector<int> takenKeys;
     int active = -1;
+    bool cancelWritesBack = true;
     Gizmo* activeHandle = nullptr;
     int typing = -1;
     /// The handle being dragged, between its drag's start and end

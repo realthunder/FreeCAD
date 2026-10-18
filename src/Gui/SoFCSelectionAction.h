@@ -444,6 +444,16 @@ public:
 
     void setLatePicking(bool enable);
 
+    /** Whether an unpickable selection root (SoFCSelectionRoot::Unpickable)
+     * is picked all the same: by the selection's pass over an edit session's
+     * own nodes only (a dress-up's preview, entry 169). Coin's pick of the
+     * scene, which a dragger takes a press by, does not see it: the preview
+     * lies in front of the handles drawn on it (entry 170, a fillet's arrow
+     * could not be dragged).
+     */
+    bool pickUnpickable() const {return pickunpickable;}
+    void setPickUnpickable(bool enable) {pickunpickable = enable;}
+
     void cleanup();
 
 protected:
@@ -464,6 +474,7 @@ private:
     bool resetclipplane = false;
     bool sectionconcave = false;
     bool latePicking = false;
+    bool pickunpickable = false;
 };
 
 } // namespace Gui
