@@ -173,6 +173,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-18 11:27: entry 170 set A DONE LOCALLY (`313083cf4e`, `7ac52ec284`), NOT pushed,
+NOT staged; 37/37 on the real screen; the arrow click no longer flips
+Reversed; set B, c, e still the reporter's.** Under the entry.
+
 **2026-10-18 10:47: entry 169 PUSHED (`3b52423f11`) and STAGED (00:26); entry 170 sized --
 set A (the 7 panels with handles) started, Draft first; set B, the
 patterns' labels and a design note put to the reporter.** Under the
@@ -3498,7 +3502,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 167 | 2026-10-16 | a defect (CRITICAL by the reporter's word): `scanner.FCStd` was SAVED, "someone (not me)"; check whether there is a transaction log inside; find new code that may cause it | OPEN; READ by the note-taker (the file and the reporter's console logs, read only): saved 18:06:52 (LastModifiedDate 10:06:52Z), schema 4 -> 5, 9.2 MB; it HOLDS a history (blobs/History.db, zstd): ONE session, the reporter's own staged FreeCAD (build hash b076aae675) opened 17:36:03, ONE save at txn 21 (18:06:52); the file was still schema 4 at the revert's read 17:59:07, so ONE save, not several; nothing in the console at 18:06:52; NO code found that saves unasked. 18:18 the 18:06:05 step READ: ONE op, a VIEW property ShowFrames set (a TechDraw page's frames toggled), 47 s before the save; no TechDraw code that saves found. 18:19 the build session (read only): NO save call added in src since 10-13 except tests; its probes open COPIES headless (FreeCADCmd) and none ran at 18:06; the session's "closed" time is written when the log is copied into the saved file, not a close -> the trigger is a SAVE ACTION in the GUI between 18:06:05 and 18:06:52; the question to the reporter: what was done in those 47 s, which window was active, did a box appear. 18:27 the PRE-SAVE content is NOT LOST: byte-identical (md5 bb568db2683b3acc217d534249778cfd, 6119171 bytes) to scanner.20261006-091732.FCBak beside it and to the build session's probe copy of 17:39 -- checked by the note-taker; the build session's 160 probes use the pre-save copy from now on. 18:33 the reporter: does NOT remember hitting any save button or anything, and saw NO format warning box; the note-taker READ: by design (the reporter's own rule of 2026-09-28) the old format is told ONCE, at the open, in the report view; a plain save then writes schema 5 with NO box -- so no box does not rule out a plain save |
 | 168 | 2026-10-16 | a change request FOR DISCUSSION: how to let the user know the RISK of saving in the NEW format, and yet ENCOURAGE it for the transaction log; eventually a NEW EXTENSION for the new format -- "one of the branch already did that" | OPEN, a discussion; the branch is `origin/Branding` (5 commits beyond LinkVibe, 10-14, not merged): schema 5 = .TStd; a plain save of an opened .FCStd writes Part.TStd BESIDE it and leaves the .FCStd as it was, with one dialog -- by the note-taker's reading it would have spared entry 167's overwrite; the note-taker's proposal under the entry. 19:00 RULED: WAIT for the other box to merge Branding first; then, on a SAVE of a file with the OLD extension, a DIALOG that ASKS -- all the facts, ENCOURAGING the new format, ASSURING the old file stays and they can save back to the old format; a "don't ask again"; when it is clicked, a dialog telling them Save As saves the new format |
 | 169 | 2026-10-17 | a change request: ALL DRESS-UP PREVIEW shapes PICKABLE in the 3D view (the unpickable style lifted); a (pre)selection there RESOLVES to the BASE EDGE's name, a missing element to its ?Edge name, so the EDIT PANEL's LIST ITEM selection SYNCS | OPEN; said to the note-taker 12:18. 12:19 the build session reading the dress-up preview code; its readings of a-f to come before it builds. 2026-10-17 12:33 the build session's readings of a-f, in build r103, nothing committed: a face resolves to the row its dress-up made, edges/vertices through their faces when one row; outside add mode a click selects (present -> the base edge, missing -> its ?Edge row), in add mode it toggles; a 3D HOVER does NOT resolve or light a row (only a selection syncs) -- the reporter wrote "(pre)selected", to be confirmed. 2026-10-17 13:47 DONE LOCALLY `1f52f9070e`, `fd8a8d4422` (log `fbcfba4541`), NOT pushed, NOT staged; readings a-f as sent; two more causes fixed (the on-top preview picked by depth, the base won every click; rmvSelection of ";AddSub;Face1" removed nothing); r105 real screen: fillet-preview-pick-syncs-list 14/14, fillet-hover-outlines-face 16/16, sketcher/box/handle tests no failure; OPEN for the reporter: d (should a hover resolve the name). 2026-10-17 13:57 d RULED (REOPENED): "Hover face should resolve the edge name too, which should trigger edge preselection highlight and edit panel list item hover plus scroll to view. Same if preselect edge in 3d view or hover list item, the othe two shall react" -- a three-way HOVER sync: preview face, base edge, list item. 2026-10-17 14:05 the build session: the hover sync in build r106, nothing committed -- the pick itself redirects a present edge's preview face to the base edge (ViewProvider::redirectEditingPick); the panel listens to preselection (row hovered in a faint selection colour, scrolled only when out of view, no scroll back; the face lit); readings a-e taken as written. 2026-10-17 14:47 the hover sync DONE LOCALLY `ebc61737c3`, `28a48ad695` (log `c93a20af5a`), NOT pushed, NOT staged; r106 crashed at the first hover (fixed); r107 real screen: fillet-preview-pick-syncs-list 20/20, 160 hover 16/16; NOT measured: the face lit for a base edge pointed at in 3D, the scroll. 2026-10-18 00:07 the reporter (to the note-taker): "Push and restage" -- relayed to the build session; NOT yet pushed or staged. 2026-10-18 10:47 the build session: PUSHED `3b52423f11` over `b76481281e` (all of 169, up to the note-taker's queue commit) and STAGED (stage15 from r107, done 00:26, INSTALL-USER OK, fcad 3b52423f11, dirty False), on the reporter's own word to it after the relay; the two NOT MEASURED points still not measured |
-| 170 | 2026-10-18 | a change request: the fillet's and chamfer's ACTIVE HANDLE and ON-VIEW EDIT brought to the REST of the PartDesign features; NOT the 3D pick or mouse hover of their preview (entry 169's) | OPEN; said to the note-taker 2026-10-18 10:42. 2026-10-18 10:47 the build session sized it: set A (7 panels with handles, 14 values) started, Draft first, nothing built; set B (no handle today), c (the patterns' labels) and e (a design note first) put to the reporter |
+| 170 | 2026-10-18 | a change request: the fillet's and chamfer's ACTIVE HANDLE and ON-VIEW EDIT brought to the REST of the PartDesign features; NOT the 3D pick or mouse hover of their preview (entry 169's) | OPEN; said to the note-taker 2026-10-18 10:42. 2026-10-18 10:47 the build session sized it: set A (7 panels with handles, 14 values) started, Draft first, nothing built; set B (no handle today), c (the patterns' labels) and e (a design note first) put to the reporter. 2026-10-18 11:27 SET A DONE LOCALLY `313083cf4e`, `7ac52ec284` (log `45bd3382dc`), NOT pushed, NOT staged; r111 real screen: pd-values-in-view 37/37, chamfer/fillet tests no failure; a plain arrow click no longer flips Reversed (Pad, Revolution, Hole) -- done before the reporter answered; unused values hidden; 159's clearing click built nowhere yet (the note-taker's 10:42 reading wrong); set B, c, e still the reporter's |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -23519,6 +23523,54 @@ The note-taker's reading: the click-to-flip going away on Pad, Revolution
 and Hole is a change the reporter did NOT ask for in 170 -- it follows
 the doc's 3.3, which the reporter agreed for the fillet. Put to the
 reporter with a, c and e.
+
+**2026-10-18 11:27, the build session (relayed): SET A DONE LOCALLY, NOT pushed, NOT
+staged** -- `313083cf4e` (Gui: on-view values: hidden values, anchors from
+the gizmos' frame, the bound property's unit), `7ac52ec284` (PD: the other
+features' values shown and typed in the view), log `45bd3382dc`. Each
+feature got the fillet's OnViewValueSet bound to the panel's own boxes:
+labels -- the main value at the top middle, the others beside their
+handle while it is active, all at the top middle with handles off; Tab,
+digits, Enter, Space, Escape as on the fillet.
+- Draft: Angle; menu "Reverse pull direction", "Remove <face>".
+- Thickness: Value; menu the reverse check, "Join type", "Remove <face>".
+- Pad/Pocket: Length, Length 2, Taper angle 1 and 2, Start offset; menu
+  "Reversed", "Sides", "Type" (or "Type of side 2").
+- Revolution/Groove: Angle, Angle 2, Start offset; menu as Pad's.
+- Helix: Pitch, Height (with its handle), Turns, Cone angle, Radial
+  growth, each when the mode shows it; menu "Left handed", "Reversed",
+  "Mode".
+- Hole: Diameter (hidden when a thread size sets it), Depth, Start
+  offset; menu "Switch direction", "Depth type".
+- Box, Cylinder, Sphere: their handle values; no menu.
+CHANGED BEHAVIOUR:
+- A plain click on Pad's, Revolution's and Hole's arrows NO LONGER FLIPS
+  Reversed (the doc's 3.3); Reversed is in the menu.
+- Values the feature does not use are HIDDEN -- no label, Tab passes
+  over (Length 2 on a one-sided pad, Turns in pitch-height-angle).
+- Fixed on the way: the pad's label read "Length 5" with no unit (the Fw
+  form's widget holds none); the label takes the bound property's unit.
+Its readings, for the reporter to change: Helix and Hole also show values
+WITHOUT a handle (pitch, turns, cone angle, growth, diameter); elsewhere
+only the values with handles. The menus are its starting set by the doc's
+3.3.
+NOT carried over: 169's preview pick and hover (as said); the fillet's
+fine undo; 159's clearing click -- built NOWHERE yet, still open as entry
+159.
+Still the reporter's: set B -- Loft, Pipe, Boolean, Wrap, Defeaturing, the
+datums, the patterns (c), the primitives without handles (cone,
+ellipsoid, torus, prism, wedge) -- and e (a design note first).
+r111 on the real screen: tests/gui/pd-values-in-view.py 37/37 (each
+feature in edit: its labels, a typed value, a menu entry, no label left
+after the edit); chamfer-values-in-view 19, fillet-radius-typed-in-view
+21, fillet-handle-click-in-view 15 -- no failure.
+The note-taker's notes:
+- CORRECTION of the 10:42 reading: it listed "a click that selects
+  nothing clearing the active handle (159)" among what the fillet HAS.
+  Wrong -- by the build session, 159 is not built; it stays open there.
+- The click-to-flip question (put to the reporter 10:47, item 4) was NOT
+  answered; the change is built anyway, by the doc's 3.3. Still for the
+  reporter.
 
 ## Inbox
 
