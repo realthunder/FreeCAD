@@ -118,6 +118,43 @@ def arrow_offsets():
     return offsets
 
 
+def field_text(node, name):
+    value = node.getField(name).get()
+    return value.getString() if hasattr(value, "getString") else str(value)
+
+
+def arrow_screen_way(pixel, length=45):
+    """The screen offset, `length` pixels long, along the shown arrow whose
+    place is nearest `pixel` (the gizmos' frame is the world's here)"""
+    import math
+    from pivy import coin
+
+    root = view().getViewer().getSoRenderManager().getSceneGraph()
+    search = coin.SoSearchAction()
+    search.setType(coin.SoType.fromName("SoLinearDraggerContainer"))
+    search.setInterest(coin.SoSearchAction.ALL)
+    search.setSearchingAll(True)
+    search.apply(root)
+    best = None
+    for p in search.getPaths():
+        node = p.getTail()
+        if field_text(node, "visible") not in ("TRUE", "1"):
+            continue
+        pos = FreeCAD.Vector(*[float(v) for v in field_text(node, "translation").split()[:3]])
+        x, y, z, angle = [float(v) for v in field_text(node, "rotation").split()[:4]]
+        way = FreeCAD.Rotation(FreeCAD.Vector(x, y, z), math.degrees(angle)).multVec(
+            FreeCAD.Vector(0, 1, 0))
+        a = view().getPointOnViewport(pos)
+        b = view().getPointOnViewport(pos + way)
+        dist = math.hypot(a[0] - pixel[0], a[1] - pixel[1])
+        if best is None or dist < best[0]:
+            best = (dist, b[0] - a[0], b[1] - a[1])
+    if best is None or math.hypot(best[1], best[2]) < 1e-6:
+        return (40, 20)
+    scale = length / math.hypot(best[1], best[2])
+    return (int(best[1] * scale), int(best[2] * scale))
+
+
 def undos():
     return len(FreeCAD.getDocument(DOC).UndoNames)
 
@@ -311,9 +348,14 @@ def run():
         arrow = pick_arrow(view().getPointOnViewport(middle))
         note("INFO the arrow at %s" % (arrow,))
         if check("an arrow is found to drag", arrow is not None):
+            # along the arrow as the screen shows it: an arrow lies in the
+            # face turned to the camera (entry 142), and a fixed offset can
+            # run square to it
+            along = arrow_screen_way(arrow)
+            note("INFO the drag along %s" % (along,))
             before = undos()
             radius = fillet.Radius.Value
-            drag(arrow, (40, 20))
+            drag(arrow, along)
             note("INFO after the drag: Radius %.4f, steps %d" % (fillet.Radius.Value, undos() - before))
             check("a drag: the radius changed, one more step",
                   abs(fillet.Radius.Value - radius) > 1e-6 and undos() == before + 1,
@@ -325,7 +367,7 @@ def run():
 
             before = undos()
             offsets = arrow_offsets()
-            drag(arrow, (40, 20), escape=True)
+            drag(arrow, along, escape=True)
             check("a drag with Escape: the radius as before it, no step",
                   abs(fillet.Radius.Value - radius) < 1e-6 and undos() == before,
                   (fillet.Radius.Value, undos() - before))

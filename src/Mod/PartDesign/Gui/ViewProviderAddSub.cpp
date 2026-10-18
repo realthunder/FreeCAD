@@ -129,7 +129,10 @@ PartGui::ViewProviderPartExt * ViewProviderAddSub::getAddSubView()
     pAddSubView->MapTransparency.setValue(false);    
     pAddSubView->ForceMapColors.setValue(false);
     pAddSubView->setHighlightFaceEdges(true);
-    pAddSubView->Selectable.setValue(previewPickable);
+    // Unpickable to the scene's pick even in a dress-up's edit: the
+    // selection's pass over the edit session picks it (entry 169), and the
+    // handles drawn over it keep their presses (entry 170)
+    pAddSubView->Selectable.setValue(false);
     pAddSubView->Lighting.setValue(1);
     pAddSubView->enableFullSelectionHighlight(false, false, false);
     pAddSubView->setStatus(Gui::SecondaryView,true);
@@ -614,8 +617,6 @@ bool ViewProviderAddSub::isEditingPickSelectable(const std::string &subname) con
 void ViewProviderAddSub::setPreviewPickable(bool pickable)
 {
     previewPickable = pickable;
-    if (pAddSubView)
-        pAddSubView->Selectable.setValue(pickable);
 }
 
 void ViewProviderAddSub::reattach(App::DocumentObject *obj)

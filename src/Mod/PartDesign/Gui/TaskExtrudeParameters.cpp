@@ -261,6 +261,19 @@ void TaskExtrudeParameters::setupGizmos()
         startOffsetGizmo->setDraggerStyle(Gui::LinearDraggerStyle::Sphere);
         taperAngleGizmo1 = new Gui::RotationGizmo(taper1);
         taperAngleGizmo2 = new Gui::RotationGizmo(taper2);
+        // Dragged back past the start, the length turns the pad (entry 170,
+        // 12:10: "support auto reverse on drag beyond")
+        lengthGizmo1->setReverseCallback(
+            [this]() {
+                if (!ui->checkBoxReversed->isEnabled()) {
+                    return false;
+                }
+                ui->checkBoxReversed->setChecked(!ui->checkBoxReversed->isChecked());
+                return true;
+            },
+            [this]() {
+                setGizmoPositions();
+            });
         // before the container makes them: their menus and tool tips
         onViewValues->addHandle(LengthValue, lengthGizmo1);
         onViewValues->addHandle(Length2Value, lengthGizmo2);
@@ -335,7 +348,9 @@ void TaskExtrudeParameters::fillValueMenu(QMenu& menu, int side)
 void TaskExtrudeParameters::setGizmoPositions()
 {
     updateOnViewValues();
-    if (!gizmoContainer) {
+    // left where they are while a drag has turned the pad: placed again
+    // when it ends
+    if (!gizmoContainer || lengthGizmo1->isTurnedInDrag()) {
         return;
     }
 

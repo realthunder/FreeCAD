@@ -170,6 +170,16 @@ void TaskThicknessParameters::setupGizmos(ViewProviderDressUp* vp)
     }
 
     linearGizmo = new Gui::LinearGizmo(ui->Value);
+    // Dragged back past the start, the value turns the thickness (entry
+    // 170, 12:10: "support auto reverse on drag beyond")
+    linearGizmo->setReverseCallback(
+        [this]() {
+            ui->checkReverse->setChecked(!ui->checkReverse->isChecked());
+            return true;
+        },
+        [this]() {
+            setGizmoPositions();
+        });
     // before the container makes it: its menu and its tool tip
     onViewValues->addHandle(0, linearGizmo);
 
@@ -181,7 +191,9 @@ void TaskThicknessParameters::setupGizmos(ViewProviderDressUp* vp)
 
 void TaskThicknessParameters::setGizmoPositions()
 {
-    if (!gizmoContainer) {
+    // left where it is while a drag has turned the thickness: placed again
+    // when it ends
+    if (!gizmoContainer || linearGizmo->isTurnedInDrag()) {
         return;
     }
 

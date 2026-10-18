@@ -150,6 +150,16 @@ void TaskDraftParameters::setupGizmos(ViewProvider* vp)
     }
 
     angleGizmo = new Gui::RotationGizmo(ui->draftAngle);
+    // Dragged back past the start, the angle turns the draft (entry 170,
+    // 12:10: "support auto reverse on drag beyond")
+    angleGizmo->setReverseCallback(
+        [this]() {
+            ui->checkReverse->setChecked(!ui->checkReverse->isChecked());
+            return true;
+        },
+        [this]() {
+            setGizmoPositions();
+        });
     // before the container makes it: its menu and its tool tip
     onViewValues->addHandle(0, angleGizmo);
 
@@ -161,7 +171,9 @@ void TaskDraftParameters::setupGizmos(ViewProvider* vp)
 
 void TaskDraftParameters::setGizmoPositions()
 {
-    if (!gizmoContainer) {
+    // left where it is while a drag has turned the draft: placed again when
+    // it ends
+    if (!gizmoContainer || angleGizmo->isTurnedInDrag()) {
         return;
     }
     gizmoContainer->visible = false;

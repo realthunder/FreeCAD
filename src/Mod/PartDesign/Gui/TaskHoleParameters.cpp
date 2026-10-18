@@ -255,6 +255,20 @@ void TaskHoleParameters::setupGizmos(ViewProviderHole* vp)
         holeDepthGizmo = new LinearGizmo(ui->Depth);
         startOffsetGizmo = new LinearGizmo(ui->StartOffset);
         startOffsetGizmo->setDraggerStyle(LinearDraggerStyle::Sphere);
+        // Dragged back past the start, the depth turns the hole (entry 170,
+        // 12:10: "support auto reverse on drag beyond"); the box acts on a
+        // click
+        holeDepthGizmo->setReverseCallback(
+            [this]() {
+                if (!ui->Reversed->isEnabled()) {
+                    return false;
+                }
+                ui->Reversed->click();
+                return true;
+            },
+            [this]() {
+                setGizmoPositions();
+            });
         // before the container makes them: their menus and tool tips
         onViewValues->addHandle(DepthValue, holeDepthGizmo);
         onViewValues->addHandle(StartOffsetValue, startOffsetGizmo);
@@ -314,7 +328,9 @@ void TaskHoleParameters::fillValueMenu(QMenu& menu)
 void TaskHoleParameters::setGizmoPositions()
 {
     updateOnViewValues();
-    if (!gizmoContainer) {
+    // left where they are while a drag has turned the hole: placed again
+    // when it ends
+    if (!gizmoContainer || holeDepthGizmo->isTurnedInDrag()) {
         return;
     }
 

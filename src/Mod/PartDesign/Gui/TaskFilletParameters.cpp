@@ -272,6 +272,8 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     // cancelled drag rolled back, the radius box one step while it has the
     // focus
     fineUndo = true;
+    // a cancelled drag is rolled back with its held step
+    onViewValues->setCancelWritesBack(false);
     connect(onViewValues.get(), &Gui::OnViewValueSet::stepBegun, this, [this]() {
         beginHeldStep();
     });

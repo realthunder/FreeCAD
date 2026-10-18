@@ -106,6 +106,16 @@ void TaskHelixParameters::setupGizmos(ViewProviderHelix* vp)
 
     if (GizmoContainer::isEnabled()) {
         heightGizmo = new Gui::LinearGizmo(ui->height);
+        // Dragged back past the start, the height turns the helix (entry
+        // 170, 12:10: "support auto reverse on drag beyond")
+        heightGizmo->setReverseCallback(
+            [this]() {
+                ui->checkBoxReversed->setChecked(!ui->checkBoxReversed->isChecked());
+                return true;
+            },
+            [this]() {
+                setGizmoPositions();
+            });
         // before the container makes it: its menu and its tool tip
         onViewValues->addHandle(HeightValue, heightGizmo);
 
@@ -174,7 +184,9 @@ void TaskHelixParameters::fillValueMenu(QMenu& menu)
 
 void TaskHelixParameters::setGizmoPositions()
 {
-    if (!gizmoContainer) {
+    // left where it is while a drag has turned the helix: placed again when
+    // it ends
+    if (!gizmoContainer || heightGizmo->isTurnedInDrag()) {
         return;
     }
 

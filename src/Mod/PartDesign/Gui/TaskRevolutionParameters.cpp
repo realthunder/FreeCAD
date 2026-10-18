@@ -195,6 +195,19 @@ void TaskRevolutionParameters::setupGizmos(ViewProvider* vp)
         rotationGizmo = new Gui::RadialGizmo(ui->revolveAngle);
         rotationGizmo2 = new Gui::RadialGizmo(ui->revolveAngle2);
         startOffsetGizmo = new Gui::RotationGizmo(ui->startOffsetEdit);
+        // Dragged back past the start, the angle turns the revolution
+        // (entry 170, 12:10: "support auto reverse on drag beyond")
+        rotationGizmo->setReverseCallback(
+            [this]() {
+                if (!ui->checkBoxReversed->isEnabled()) {
+                    return false;
+                }
+                ui->checkBoxReversed->setChecked(!ui->checkBoxReversed->isChecked());
+                return true;
+            },
+            [this]() {
+                setGizmoPositions();
+            });
         // before the container makes them: their menus and tool tips
         onViewValues->addHandle(AngleValue, rotationGizmo);
         onViewValues->addHandle(Angle2Value, rotationGizmo2);
@@ -264,7 +277,9 @@ void TaskRevolutionParameters::fillValueMenu(QMenu& menu, int side)
 void TaskRevolutionParameters::setGizmoPositions()
 {
     updateOnViewValues();
-    if (!gizmoContainer) {
+    // left where they are while a drag has turned the revolution: placed
+    // again when it ends
+    if (!gizmoContainer || rotationGizmo->isTurnedInDrag()) {
         return;
     }
 
