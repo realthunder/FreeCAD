@@ -480,6 +480,139 @@ the OLD path, and the index stepped twice. CONFIRMED by the build session
 per-edge value never follows a renamed edge. The build session fixes it
 on its own judgement (a test `TestDressUpNamesFollow`).
 
+## 7. The rest of PartDesign (entry 170, set B): A DESIGN, NOT BUILT
+
+Written by the build session, 2026-10-18, from a read of the source.
+For the reporter to decide (7.6) before any of it is built.
+
+The reporter, 2026-10-18 10:42: "Implement the same active handle and on
+view edit to the rest of partdesign feature. No need 3d view pick or mouse
+hover for preview shape". Set A -- the features that already had handles
+-- is built (7.1). For the rest, 12:07: "Add handle only if it makes
+sense, yes design first. Yes pattern label the same." And 12:10, on the
+click on an arrow: "Yes no longer flip, but support auto reverse on drag
+beyond" (7.5).
+
+### 7.1 What set A built
+
+Draft, Thickness, Pad/Pocket, Revolution/Groove, Helix, Hole and the Box,
+Cylinder and Sphere primitives (`313083cf4e`, `7ac52ec284`). Each panel's
+values go to a `Gui::OnViewValueSet` bound to the panel's own spin boxes:
+
+- the main value's label at the top middle, the others beside their
+  handle while it is active (at the top middle too with handles off);
+- Tab, a digit, Enter, Space, Escape as on the fillet (3.2);
+- the handle's menu holds the feature's operations (Reversed, the sides,
+  the type, the depth type, the mode, the join type, "Remove <face>");
+- a value the feature does not use now has no label and Tab passes it
+  over (`OnViewValueSet::setHidden`);
+- Helix and Hole also show values without a handle (pitch, turns, cone
+  angle, growth; diameter).
+
+Not carried over: 169's preview pick and hover (as asked), the fillet's
+one undo step per drag (entry 136, "fillet first"), and entry 159's
+clearing click, which is not built anywhere yet.
+
+### 7.2 Feature by feature
+
+What each remaining feature's panel has, and what is proposed. "Typed"
+means a value of the set with no handle: a label, Tab, typing.
+
+| Feature | Values in the panel | Proposed |
+|---|---|---|
+| Linear pattern (PD, and App link arrays: same widget) | Extent or Spacing, Occurrences, per-gap spacings; a second direction | onto the set (7.3); an arrow at the last occurrence for Extent, at the second for Spacing |
+| Polar pattern (PD, link arrays) | Angle (extent) or spacing, Occurrences, gaps | onto the set (7.3); a rotation handle at the last occurrence for the angle |
+| Circular pattern | RadialDistance, TangentialDistance, NumberCircles, Symmetry | typed; an arrow from the axis along the first ring for RadialDistance |
+| Path pattern | Count, Spacing, StartOffset, EndOffset, mode | typed; no handle (a slider along a path is a new kind of handle: later, if wanted) |
+| Point pattern | none | nothing |
+| Scaled | Factor, Occurrences | typed; no handle |
+| Mirrored | none | nothing |
+| MultiTransform | its steps' own panels | each step as its feature above |
+| Cone | Radius1, Radius2, Height, Angle | arrows for the radii and the height; angle typed |
+| Ellipsoid | Radius1 to 3, Angle1 to 3 | an arrow per radius, on its axis; angles typed |
+| Torus | Radius1, Radius2, Angle1 to 3 | an arrow for Radius1 from the axis, one for Radius2 across the tube; angles typed |
+| Prism | Polygon (a count), Circumradius, Height, the two skew angles | arrows for the circumradius and the height; polygon and angles typed |
+| Wedge | Xmin..Xmax, Ymin..Ymax, Zmin..Zmax, X2min..X2max, Z2min..Z2max | arrows for the six extents; X2 and Z2 typed |
+| Cylinder, Sphere (set A) | also Angle, Angle1 to 3 | angles typed |
+| Datum plane, line, point, CS | the attachment offset: X, Y, Z, roll, pitch, yaw (Part's `TaskAttacher`) | typed; an arrow along a plane's normal for its offset Z (7.6, b) |
+| Loft | Ruled, Closed, max degree | nothing (no value to show at a place) |
+| Pipe | the modes, a binormal vector | nothing |
+| Boolean, Wrap, Defeaturing | none | nothing |
+
+"Makes sense", as read here: the value is a length or angle you can see
+at a place on the shape -- a radius, a height, how far the copies go --
+and dragging there is quicker than typing. A count, an angle of a
+primitive's sweep, a skew, a vector are typed only.
+
+### 7.3 The patterns' labels on the same machinery
+
+Today (`PatternWidgets.cpp` 698 to 822) each direction draws its extent,
+or each gap, as a DIMENSION -- a distance along the direction, or an arc
+for a polar pattern -- and a click edits it in place; a gap emptied goes
+back to following the spacing. The count is not shown. Moving onto
+`OnViewValueSet` ("Yes pattern label the same") gives them what the set
+has: an active value, Tab through extent, count and gaps, a digit to
+type, Space for the menu, and handles. Two things the set does not have
+yet (7.4, a and b): a label drawn as a dimension rather than as text,
+and a count held by a `UIntSpinBox`.
+
+- Extent mode: the extent's dimension along the direction, as now, and
+  "Occurrences 5" at the top middle. Spacing mode: each gap's dimension,
+  as now.
+- The menu: "Reversed", the mode ("Extent", "Spacing"), and on a gap that
+  has its own value "Follow the spacing" (an emptied gap still does that).
+- One change for both PartDesign and the link arrays: the widget is
+  shared (`TaskLinkArray.cpp` 275 to 314), so the link array panel gets
+  the same.
+
+### 7.4 What the machinery needs
+
+a. A DIMENSION place: the label drawn as a distance between two points,
+   or an angle about a centre, that the feature gives and moves --
+   `setDimension(index, ...)` -- as the patterns draw theirs today.
+b. COUNTS: a value held by a `UIntSpinBox` (and the plain spin boxes)
+   as well as a `QuantitySpinBox`: the set reads, writes and types it
+   through one small interface, with no unit and integer steps.
+c. A TOP-MIDDLE-WHILE-ACTIVE place: a feature with many values (a wedge's
+   ten, a sphere's radius and three angles) shows its main ones always
+   and the rest only while Tab is on them, in the row below.
+d. Handles from the feature's view provider rather than its panel, where
+   a feature has no panel of its own (MultiTransform's steps).
+
+### 7.5 Reverse by dragging past the start (asked 12:10)
+
+A plain click on an arrow no longer flips anything (kept). Instead,
+dragging an arrow back past its start flips the feature: Reversed is
+toggled and the value grows again the other way, instead of stopping at
+its minimum. For every handle whose feature has a Reversed: Pad/Pocket's
+length, Revolution/Groove's angle, Hole's depth, Draft's angle, Thickness's
+value, Helix's height. A handle with nothing to reverse (a primitive's
+size) stops at its minimum, as now. The drag stays one undo step. This
+belongs to set A's handles and is built with it, not with set B.
+
+### 7.6 For the reporter
+
+a. Patterns: an arrow for the extent (spacing) and a rotation handle for
+   a polar angle -- yes or no? The count typed only?
+b. Datums: the offset panel is Part's attacher, shared with a sketch's
+   and a Part primitive's attachment. On-view values for every user of
+   it, or PartDesign's datums only? A plane's normal offset as its only
+   handle?
+c. Primitives: the arrows in 7.2 -- all of them, the wedge's six too?
+d. Values typed only (angles, counts): always at the top middle, or only
+   while active (7.4 c)?
+e. Scaled: typed only, or a handle for the factor?
+
+### 7.7 Order of work, once decided
+
+1. The machinery (7.4 a and b).
+2. The patterns: Linear and Polar (PartDesign and link arrays at once),
+   then Circular, Path and Scaled.
+3. The primitives without handles.
+4. The datums.
+
+Each shown on the real screen with a test, as set A was.
+
 ## Sources
 
 1. SolidWorks, FilletXpert Change PropertyManager:
