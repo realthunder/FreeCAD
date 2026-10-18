@@ -173,6 +173,10 @@ read by the build session; 53 is reproduced, the others not started. Its
 order after 51, "unless the reporter says otherwise": 53, 54, 55, 56 with
 57 after it, 52, 30, 48, 47.
 
+**2026-10-18 10:42: new entry 170 -- the active handle and on-view edit for the rest of
+the PartDesign features, without entry 169's 3D pick or hover of the
+preview.** Under the entry.
+
 **2026-10-18 00:07: "Push and restage" (the reporter, to the note-taker) -- entry 169 as
 committed; relayed to the build session. Not yet pushed or staged.** Under
 the entry.
@@ -3489,6 +3493,7 @@ planned"; before that, "Push" on 2026-10-08 (`4d08eacde1`: entries 41, 42,
 | 167 | 2026-10-16 | a defect (CRITICAL by the reporter's word): `scanner.FCStd` was SAVED, "someone (not me)"; check whether there is a transaction log inside; find new code that may cause it | OPEN; READ by the note-taker (the file and the reporter's console logs, read only): saved 18:06:52 (LastModifiedDate 10:06:52Z), schema 4 -> 5, 9.2 MB; it HOLDS a history (blobs/History.db, zstd): ONE session, the reporter's own staged FreeCAD (build hash b076aae675) opened 17:36:03, ONE save at txn 21 (18:06:52); the file was still schema 4 at the revert's read 17:59:07, so ONE save, not several; nothing in the console at 18:06:52; NO code found that saves unasked. 18:18 the 18:06:05 step READ: ONE op, a VIEW property ShowFrames set (a TechDraw page's frames toggled), 47 s before the save; no TechDraw code that saves found. 18:19 the build session (read only): NO save call added in src since 10-13 except tests; its probes open COPIES headless (FreeCADCmd) and none ran at 18:06; the session's "closed" time is written when the log is copied into the saved file, not a close -> the trigger is a SAVE ACTION in the GUI between 18:06:05 and 18:06:52; the question to the reporter: what was done in those 47 s, which window was active, did a box appear. 18:27 the PRE-SAVE content is NOT LOST: byte-identical (md5 bb568db2683b3acc217d534249778cfd, 6119171 bytes) to scanner.20261006-091732.FCBak beside it and to the build session's probe copy of 17:39 -- checked by the note-taker; the build session's 160 probes use the pre-save copy from now on. 18:33 the reporter: does NOT remember hitting any save button or anything, and saw NO format warning box; the note-taker READ: by design (the reporter's own rule of 2026-09-28) the old format is told ONCE, at the open, in the report view; a plain save then writes schema 5 with NO box -- so no box does not rule out a plain save |
 | 168 | 2026-10-16 | a change request FOR DISCUSSION: how to let the user know the RISK of saving in the NEW format, and yet ENCOURAGE it for the transaction log; eventually a NEW EXTENSION for the new format -- "one of the branch already did that" | OPEN, a discussion; the branch is `origin/Branding` (5 commits beyond LinkVibe, 10-14, not merged): schema 5 = .TStd; a plain save of an opened .FCStd writes Part.TStd BESIDE it and leaves the .FCStd as it was, with one dialog -- by the note-taker's reading it would have spared entry 167's overwrite; the note-taker's proposal under the entry. 19:00 RULED: WAIT for the other box to merge Branding first; then, on a SAVE of a file with the OLD extension, a DIALOG that ASKS -- all the facts, ENCOURAGING the new format, ASSURING the old file stays and they can save back to the old format; a "don't ask again"; when it is clicked, a dialog telling them Save As saves the new format |
 | 169 | 2026-10-17 | a change request: ALL DRESS-UP PREVIEW shapes PICKABLE in the 3D view (the unpickable style lifted); a (pre)selection there RESOLVES to the BASE EDGE's name, a missing element to its ?Edge name, so the EDIT PANEL's LIST ITEM selection SYNCS | OPEN; said to the note-taker 12:18. 12:19 the build session reading the dress-up preview code; its readings of a-f to come before it builds. 2026-10-17 12:33 the build session's readings of a-f, in build r103, nothing committed: a face resolves to the row its dress-up made, edges/vertices through their faces when one row; outside add mode a click selects (present -> the base edge, missing -> its ?Edge row), in add mode it toggles; a 3D HOVER does NOT resolve or light a row (only a selection syncs) -- the reporter wrote "(pre)selected", to be confirmed. 2026-10-17 13:47 DONE LOCALLY `1f52f9070e`, `fd8a8d4422` (log `fbcfba4541`), NOT pushed, NOT staged; readings a-f as sent; two more causes fixed (the on-top preview picked by depth, the base won every click; rmvSelection of ";AddSub;Face1" removed nothing); r105 real screen: fillet-preview-pick-syncs-list 14/14, fillet-hover-outlines-face 16/16, sketcher/box/handle tests no failure; OPEN for the reporter: d (should a hover resolve the name). 2026-10-17 13:57 d RULED (REOPENED): "Hover face should resolve the edge name too, which should trigger edge preselection highlight and edit panel list item hover plus scroll to view. Same if preselect edge in 3d view or hover list item, the othe two shall react" -- a three-way HOVER sync: preview face, base edge, list item. 2026-10-17 14:05 the build session: the hover sync in build r106, nothing committed -- the pick itself redirects a present edge's preview face to the base edge (ViewProvider::redirectEditingPick); the panel listens to preselection (row hovered in a faint selection colour, scrolled only when out of view, no scroll back; the face lit); readings a-e taken as written. 2026-10-17 14:47 the hover sync DONE LOCALLY `ebc61737c3`, `28a48ad695` (log `c93a20af5a`), NOT pushed, NOT staged; r106 crashed at the first hover (fixed); r107 real screen: fillet-preview-pick-syncs-list 20/20, 160 hover 16/16; NOT measured: the face lit for a base edge pointed at in 3D, the scroll. 2026-10-18 00:07 the reporter (to the note-taker): "Push and restage" -- relayed to the build session; NOT yet pushed or staged |
+| 170 | 2026-10-18 | a change request: the fillet's and chamfer's ACTIVE HANDLE and ON-VIEW EDIT brought to the REST of the PartDesign features; NOT the 3D pick or mouse hover of their preview (entry 169's) | OPEN; said to the note-taker 2026-10-18 10:42 |
 
 ## 1. Idle progress bar in the status bar -- STAGED
 
@@ -23418,6 +23423,56 @@ NOT said:
 a. whether the two NOT MEASURED points (the face lit for a base edge
    pointed at in 3D, the scroll) are to be measured first (read: no).
 
+## 170. The active handle and on-view edit for the rest of the PartDesign features; no 3D pick or hover of their preview (a change request) -- OPEN
+
+**2026-10-18 10:42, the reporter (to the note-taker):** "New request. Implement the same active handle and on view edit to the rest of partdesign feature. No need 3d view pick or mouse hover for preview shape"
+The note-taker's reading:
+- What the fillet and chamfer have now (entry 117, docs/OnViewValueEditing.md
+  steps 1 to 3, and the later fixes 135, 141, 159): handles in the view, an
+  ACTIVE handle that takes typed values (click on it or Tab; a digit opens
+  the box), its value label, the root button and its menu, a click that
+  selects nothing clearing the active handle (159) -- the same for every
+  other PartDesign feature.
+- "No need 3d view pick or mouse hover for preview shape": entry 169's work
+  (the preview pickable in the 3D view, its hover and click resolved to the
+  base element and synced with the panel's list) is NOT carried to the
+  other features. Their preview stays as it is.
+READ in the source, nothing run:
+- Already on the on-view machinery (`Gui::OnViewValueSet`): Fillet
+  (TaskFilletParameters.h:232) and Chamfer (TaskChamferParameters.h:190)
+  only.
+- Gizmos (handles) but no on-view values: Draft, Thickness
+  (setupGizmos), Pad/Pocket (TaskExtrudeParameters), Revolution/Groove,
+  Helix, Hole, the primitives (by `git grep Gizmo`, and the doc's 1.4).
+- Values typed in the view WITHOUT handles: the patterns' clickable extent
+  and spacing labels (PatternWidgets.cpp, the doc's 1.4).
+- No gizmo by the same grep, and no on-view value: Loft, Pipe, Boolean,
+  Wrap, Defeaturing, the datums (TaskDatumParameters), the patterns.
+NOT said:
+a. Which features "the rest" covers. Read as every PartDesign feature whose
+   panel has a value to type. That means Draft and Thickness (the doc's
+   step 4), Pad/Pocket and the other extrudes, Revolution/Groove, Helix,
+   Hole and the primitives. Whether features that have NO handle today
+   (Loft, Pipe, Boolean, Wrap, the patterns' values) get NEW handles is not
+   said.
+b. How much of "the same". Read as all that applies: the active handle,
+   typing, Tab, the value label, 159's clearing click, the root button's
+   menu where the feature has choices (reversed, the mode, the join type
+   ...), and the panel optional (the doc's 3.5.1). Per-element values
+   (the fillet's segments, the chamfer's ChamferInfo) only where the
+   feature has them.
+c. Whether the patterns' existing clickable labels move onto the same
+   machinery or stay as they are.
+d. The order, and whether it is one feature at a time, each shown on the
+   real screen as the doc's section 4 asks (read so).
+e. Whether a design note comes first for the features without handles
+   today (read: the doc's 3.4 already covers Draft and Thickness; the rest
+   would need one).
+f. The setting "Values in the view while editing" (the doc's 3.6) covering
+   them too (read so).
+Note: entry 169 is not yet pushed or staged by any report. The reporter's
+"Push and restage" (00:07) was relayed, and no result has come back.
+
 ## Inbox
 
 Notes not sorted into an entry yet. Add a line here at any time, in any words;
@@ -23429,5 +23484,5 @@ entries 46 to 66; entry 67 is of 2026-10-11, found by the build session;
 entries 68 to 81 are of 2026-10-12, 77 said to the build session, 79
 and 81 found by it; entries 82 to 113 are of 2026-10-13, 82 found by
 it; entries 114 to 133 are of 2026-10-14, 116, 119 and 133 said to
-the build session, 131 and 132 found by it; entries 134 to 169
+the build session, 131 and 132 found by it; entries 134 to 170
 are of 2026-10-15, 134 said to the build session)
