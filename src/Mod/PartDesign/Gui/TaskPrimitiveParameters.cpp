@@ -26,6 +26,7 @@
 #ifndef _PreComp_
 # include <QMessageBox>
 # include <QCheckBox>
+# include <QTimer>
 #endif
 
 #include <App/Document.h>
@@ -37,6 +38,7 @@
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/OnViewValue.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Gui/Utilities.h>
 #include <Mod/PartDesign/App/Body.h>
@@ -191,38 +193,63 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
 
 void TaskBoxPrimitives::setupGizmos()
 {
-    if (!Gui::GizmoContainer::isEnabled()) {
-        return;
-    }
     auto feat = vp ? dynamic_cast<PartDesign::FeaturePrimitive*>(vp->getObject()) : nullptr;
     if (!feat) {
         return;
     }
 
+    // The values that have handles, in the view (docs/OnViewValueEditing.md
+    // 3.3, entry 170): their labels always at the top middle, typed once a
+    // handle is made active by a click or Tab
+    const bool handles = Gui::GizmoContainer::isEnabled();
+    const auto top = Gui::OnViewValueSet::Place::TopMiddle;
+    auto value = [this, handles, top](Gui::QuantitySpinBox* box, const QString& title) {
+        Gui::LinearGizmo* gizmo = handles ? new Gui::LinearGizmo(box) : nullptr;
+        // before the container makes it: its tool tip
+        onViewValues->addValue(box, title, top, gizmo);
+        return gizmo;
+    };
+    onViewValues = std::make_unique<Gui::OnViewValueSet>();
     switch (feat->getPrimitiveType()) {
         case PartDesign::FeaturePrimitive::Box:
-            lengthGizmo = new Gui::LinearGizmo(ui->boxLength);
-            widthGizmo = new Gui::LinearGizmo(ui->boxWidth);
-            heightGizmo = new Gui::LinearGizmo(ui->boxHeight);
-
-            gizmoContainer = Gui::GizmoContainer::create({widthGizmo, heightGizmo, lengthGizmo}, vp);
+            lengthGizmo = value(ui->boxLength, tr("Length"));
+            widthGizmo = value(ui->boxWidth, tr("Width"));
+            heightGizmo = value(ui->boxHeight, tr("Height"));
+            if (handles) {
+                gizmoContainer = Gui::GizmoContainer::create({widthGizmo, heightGizmo, lengthGizmo}, vp);
+            }
             break;
         case PartDesign::FeaturePrimitive::Cylinder:
-            heightGizmo = new Gui::LinearGizmo(ui->cylinderHeight);
-            radiusGizmo = new Gui::LinearGizmo(ui->cylinderRadius);
-
-            gizmoContainer = Gui::GizmoContainer::create({heightGizmo, radiusGizmo}, vp);
+            radiusGizmo = value(ui->cylinderRadius, tr("Radius"));
+            heightGizmo = value(ui->cylinderHeight, tr("Height"));
+            if (handles) {
+                gizmoContainer = Gui::GizmoContainer::create({heightGizmo, radiusGizmo}, vp);
+            }
             break;
         case PartDesign::FeaturePrimitive::Sphere:
-            radiusGizmo = new Gui::LinearGizmo(ui->sphereRadius);
-
-            gizmoContainer = Gui::GizmoContainer::create({radiusGizmo}, vp);
+            radiusGizmo = value(ui->sphereRadius, tr("Radius"));
+            if (handles) {
+                gizmoContainer = Gui::GizmoContainer::create({radiusGizmo}, vp);
+            }
             break;
         default:
+            onViewValues.reset();
             return;
     }
 
     setGizmoPositions();
+    attachOnViewValues();
+    // The view is told of the edit after the panel is made
+    QTimer::singleShot(0, this, [this]() {
+        attachOnViewValues();
+    });
+}
+
+void TaskBoxPrimitives::attachOnViewValues()
+{
+    if (onViewValues) {
+        onViewValues->attachToEdit(vp, gizmoContainer.get());
+    }
 }
 
 void TaskBoxPrimitives::setGizmoPositions()
@@ -258,6 +285,9 @@ void TaskBoxPrimitives::setGizmoPositions()
             break;
         default:
             return;
+    }
+    if (onViewValues) {
+        onViewValues->placeAnchors(gizmoContainer->getWorldMatrix());
     }
 }
 

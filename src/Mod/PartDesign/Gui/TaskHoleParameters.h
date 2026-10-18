@@ -30,12 +30,14 @@
 
 
 class Ui_TaskHoleParameters;
+class QMenu;
 
 namespace App {
 class Property;
 }
 
 namespace Gui {
+class OnViewValueSet;
 class ViewProvider;
 }
 
@@ -173,6 +175,20 @@ private:
     std::unique_ptr<Ui_TaskHoleParameters> ui;
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    /// The values in the view (docs/OnViewValueEditing.md 3.3, entry 170),
+    /// in the order of the enum below. After gizmoContainer, so that it goes
+    /// before the handles it holds.
+    std::unique_ptr<Gui::OnViewValueSet> onViewValues;
+    enum OnViewValue {
+        DiameterValue,
+        DepthValue,
+        StartOffsetValue,
+    };
+    /// Show the values in the view the edit runs in, and restate them
+    void attachOnViewValues();
+    /// The values the feature does not use now hidden
+    void updateOnViewValues();
+    void fillValueMenu(QMenu& menu);
     Gui::LinearGizmo* holeDepthGizmo = nullptr;
     Gui::LinearGizmo* startOffsetGizmo = nullptr;
     void setupGizmos(ViewProviderHole* vp);

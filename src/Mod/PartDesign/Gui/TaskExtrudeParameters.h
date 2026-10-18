@@ -33,7 +33,10 @@ namespace App {
 class Property;
 }
 
+class QMenu;
+
 namespace Gui {
+class OnViewValueSet;
 namespace Fw {
 class QComboBox;
 class UiForm;
@@ -172,6 +175,24 @@ private:
                                   SelectionMode mode);
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    /// The values in the view (docs/OnViewValueEditing.md 3.3, entry 170),
+    /// in the order of the enum below. After gizmoContainer, so that it goes
+    /// before the handles it holds.
+    std::unique_ptr<Gui::OnViewValueSet> onViewValues;
+    enum OnViewValue {
+        LengthValue,
+        Length2Value,
+        TaperValue,
+        Taper2Value,
+        StartOffsetValue,
+    };
+    /// Show the values in the view the edit runs in, and restate them
+    void attachOnViewValues();
+    /// The values the feature does not use now hidden
+    void updateOnViewValues();
+    /// A handle's menu: the reversal, the sides and \a side's type
+    void fillValueMenu(QMenu& menu, int side);
+
     Gui::LinearGizmo* lengthGizmo1 = nullptr;
     Gui::LinearGizmo* lengthGizmo2 = nullptr;
     /// Drags StartOffset from the plane it is measured from (upstream a01fad4f53)

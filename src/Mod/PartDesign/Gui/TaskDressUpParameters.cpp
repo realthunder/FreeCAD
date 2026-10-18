@@ -28,7 +28,9 @@
 # include <QApplication>
 # include <QAction>
 # include <QKeyEvent>
+# include <QMenu>
 # include <QPushButton>
+# include <QTimer>
 # include <QCheckBox>
 # include <QColor>
 # include <QIcon>
@@ -234,6 +236,38 @@ bool TaskDressUpParameters::showOnTop(bool enable,
     }
     onTopObjs = std::move(objs);
     return true;
+}
+
+QTreeWidgetItem *TaskDressUpParameters::getFirstFaceItem() const
+{
+    if (!treeWidget)
+        return nullptr;
+    for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
+        auto item = treeWidget->topLevelItem(i);
+        if (getGeometryItemText(item).startsWith("Face"))
+            return item;
+    }
+    return nullptr;
+}
+
+void TaskDressUpParameters::addRemoveFirstFaceAction(QMenu &menu)
+{
+    QTreeWidgetItem *item = getFirstFaceItem();
+    if (!item)
+        return;
+    menu.addSeparator();
+    QAction *remove = menu.addAction(
+        tr("Remove %1").arg(QString::fromLatin1(getGeometryItemText(item))));
+    connect(remove, &QAction::triggered, this, [this]() {
+        // after the menu: the removal recomputes and moves the handle
+        QTimer::singleShot(0, this, [this]() {
+            if (QTreeWidgetItem *item = getFirstFaceItem()) {
+                treeWidget->clearSelection();
+                item->setSelected(true);
+                onRefDeleted();
+            }
+        });
+    });
 }
 
 void TaskDressUpParameters::addAllEdges()

@@ -22,12 +22,16 @@
 
 #include "PreCompiled.h"
 
+#include <QMenu>
+#include <QTimer>
+
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <App/Document.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
+#include <Gui/OnViewValue.h>
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
 #include <Base/Converter.h>
@@ -36,6 +40,7 @@
 
 #include "ui_TaskHoleParameters.h"
 #include "TaskHoleParameters.h"
+#include "Utils.h"
 
 using namespace PartDesignGui;
 using namespace Gui;
@@ -228,28 +233,87 @@ PartDesign::Hole* TaskHoleParameters::editHole()
 
 void TaskHoleParameters::setupGizmos(ViewProviderHole* vp)
 {
-    if (!GizmoContainer::isEnabled()) {
-        return;
+    // The values in the view (docs/OnViewValueEditing.md 3.3, entry 170): the
+    // diameter's and the depth's labels always at the top middle, the start
+    // offset's beside its handle while it is active -- at the top middle too
+    // without handles. A click on the depth's arrow no longer reverses the
+    // hole: the handles' menu does (3.3).
+    const bool handles = GizmoContainer::isEnabled();
+    const auto top = Gui::OnViewValueSet::Place::TopMiddle;
+    onViewValues = std::make_unique<Gui::OnViewValueSet>();
+    onViewValues->addValue(ui->Diameter, tr("Diameter"), top);
+    onViewValues->addValue(ui->Depth, tr("Depth"), top);
+    onViewValues->addValue(ui->StartOffset, tr("Start offset"),
+                           handles ? Gui::OnViewValueSet::Place::AtHandle : top);
+    for (int i = DiameterValue; i <= StartOffsetValue; ++i) {
+        onViewValues->setMenu(i, [this](QMenu& menu, Gui::Gizmo*) {
+            fillValueMenu(menu);
+        });
     }
 
-    holeDepthGizmo = new LinearGizmo(ui->Depth);
-    holeDepthGizmo->setClickCallback([this] {
-        if (ui->Reversed->isEnabled()) {
-            ui->Reversed->click();
-        }
-    });
+    if (handles) {
+        holeDepthGizmo = new LinearGizmo(ui->Depth);
+        startOffsetGizmo = new LinearGizmo(ui->StartOffset);
+        startOffsetGizmo->setDraggerStyle(LinearDraggerStyle::Sphere);
+        // before the container makes them: their menus and tool tips
+        onViewValues->addHandle(DepthValue, holeDepthGizmo);
+        onViewValues->addHandle(StartOffsetValue, startOffsetGizmo);
 
-    startOffsetGizmo = new LinearGizmo(ui->StartOffset);
-    startOffsetGizmo->setDraggerStyle(LinearDraggerStyle::Sphere);
-
-    gizmoContainer = GizmoContainer::create({holeDepthGizmo, startOffsetGizmo}, vp);
+        gizmoContainer = GizmoContainer::create({holeDepthGizmo, startOffsetGizmo}, vp);
+    }
 
     setGizmoPositions();
-    showDraggerHints();
+    if (gizmoContainer) {
+        showDraggerHints();
+    }
+    attachOnViewValues();
+    // The view is told of the edit after the panel is made
+    QTimer::singleShot(0, this, [this]() {
+        attachOnViewValues();
+    });
+}
+
+void TaskHoleParameters::attachOnViewValues()
+{
+    if (onViewValues) {
+        onViewValues->attachToEdit(vp, gizmoContainer.get());
+    }
+}
+
+void TaskHoleParameters::updateOnViewValues()
+{
+    auto hole = getHole();
+    if (!onViewValues || !hole) {
+        return;
+    }
+    // A diameter a thread's standard size sets is not typed; a depth only
+    // for the type Dimension; a start offset only for a start that is not
+    // the profile's plane
+    onViewValues->setHidden(DiameterValue, !ui->Diameter->isEnabled());
+    onViewValues->setHidden(DepthValue,
+                            std::string(hole->DepthType.getValueAsString()) != "Dimension");
+    onViewValues->setHidden(StartOffsetValue, hole->StartType.getValue() == ProfilePlane);
+}
+
+void TaskHoleParameters::fillValueMenu(QMenu& menu)
+{
+    // The feature's own operations (docs/OnViewValueEditing.md 3.3): the
+    // panel's own fields. The check box acts on a click.
+    addToggleAction(menu, ui->Reversed->text(), ui->Reversed->isChecked(),
+                    ui->Reversed->isEnabled(), this, [this](bool checked) {
+                        if (ui->Reversed->isChecked() != checked) {
+                            ui->Reversed->click();
+                        }
+                    });
+    addChoicesMenu(menu, tr("Depth type"), comboItems(ui->DepthType),
+                   ui->DepthType->currentIndex(), this, [this](int i) {
+                       ui->DepthType->setCurrentIndex(i);
+                   });
 }
 
 void TaskHoleParameters::setGizmoPositions()
 {
+    updateOnViewValues();
     if (!gizmoContainer) {
         return;
     }
@@ -297,12 +361,18 @@ void TaskHoleParameters::setGizmoPositions()
     holeDepthGizmo->setVisibility(std::string(hole->DepthType.getValueAsString()) == "Dimension");
 
     holeDepthGizmo->setDragLength(ui->Depth->rawValue());
+    if (onViewValues) {
+        onViewValues->placeAnchors(gizmoContainer->getWorldMatrix());
+    }
 }
 
 void TaskHoleParameters::finishedRecomputeFeature()
 {
     TaskSketchBasedParameters::finishedRecomputeFeature();
     setGizmoPositions();
+    if (onViewValues) {
+        onViewValues->refresh();
+    }
 }
 
 const char *TaskHoleParameters::updateViewParameter() const

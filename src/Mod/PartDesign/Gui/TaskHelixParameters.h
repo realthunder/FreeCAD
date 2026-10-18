@@ -33,7 +33,10 @@ namespace App {
 class Property;
 }
 
+class QMenu;
+
 namespace Gui {
+class OnViewValueSet;
 class ViewProvider;
 }
 
@@ -118,6 +121,24 @@ private:
     std::unique_ptr<Ui_TaskHelixParameters> ui;
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    /// The values in the view (docs/OnViewValueEditing.md 3.3, entry 170),
+    /// in the order of the enum below: every value the panel has, each shown
+    /// while the mode shows its box. After gizmoContainer, so that it goes
+    /// before the handles it holds.
+    std::unique_ptr<Gui::OnViewValueSet> onViewValues;
+    enum OnViewValue {
+        PitchValue,
+        HeightValue,
+        TurnsValue,
+        AngleValue,
+        GrowthValue,
+    };
+    /// Show the values in the view the edit runs in, and restate them
+    void attachOnViewValues();
+    /// The values whose boxes the mode hides hidden
+    void updateOnViewValues();
+    void fillValueMenu(QMenu& menu);
+
     Gui::LinearGizmo* heightGizmo = nullptr;
     void setupGizmos(ViewProviderHelix* vp);
     void setGizmoPositions();

@@ -27,7 +27,12 @@
 # include <QApplication>
 # include <QPointer>
 # include <QMessageBox>
+# include <QAction>
+# include <QActionGroup>
 # include <QCheckBox>
+# include <QComboBox>
+# include <QMenu>
+# include <QTimer>
 # include <QTreeWidget>
 # include <Precision.hxx>
 # include <gp_Pln.hxx>
@@ -1902,6 +1907,48 @@ void setGeometryItemText(QTreeWidgetItem *item, const std::string &text)
 QByteArray getGeometryItemText(QTreeWidgetItem *item)
 {
     return item->data(0, Qt::UserRole+1).toByteArray().constData();
+}
+
+void addToggleAction(QMenu &menu, const QString &title, bool checked, bool enabled,
+                     QObject *context, std::function<void(bool)> set)
+{
+    QAction *action = menu.addAction(title);
+    action->setCheckable(true);
+    action->setChecked(checked);
+    action->setEnabled(enabled);
+    QObject::connect(action, &QAction::triggered, context, [context, set](bool on) {
+        // after the menu: the recompute moves the handles, the menu's too
+        QTimer::singleShot(0, context, [set, on]() {
+            set(on);
+        });
+    });
+}
+
+void addChoicesMenu(QMenu &menu, const QString &title, const QStringList &items, int current,
+                    QObject *context, std::function<void(int)> choose)
+{
+    QMenu *sub = menu.addMenu(title);
+    auto group = new QActionGroup(sub);
+    group->setExclusive(true);
+    for (int i = 0; i < items.size(); ++i) {
+        QAction *action = sub->addAction(items[i]);
+        action->setCheckable(true);
+        action->setChecked(i == current);
+        group->addAction(action);
+        QObject::connect(action, &QAction::triggered, context, [context, choose, i]() {
+            QTimer::singleShot(0, context, [choose, i]() {
+                choose(i);
+            });
+        });
+    }
+}
+
+QStringList comboItems(const QComboBox *combo)
+{
+    QStringList items;
+    for (int i = 0; i < combo->count(); ++i)
+        items.push_back(combo->itemText(i));
+    return items;
 }
 
 void setGeometryItemReference(QTreeWidgetItem *item, const std::string &ref)

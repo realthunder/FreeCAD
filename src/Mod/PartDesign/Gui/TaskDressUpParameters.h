@@ -37,6 +37,7 @@
 
 class QAction;
 class QIcon;
+class QMenu;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -116,6 +117,15 @@ protected:
     static QIcon groupIcon(int group);
 
     void addAllEdges();
+
+    /** The row of the first face referenced: where a face feature's handle
+     * stands (DressUp::getFaces keeps the order of the references). Null for
+     * none.
+     */
+    QTreeWidgetItem *getFirstFaceItem() const;
+    /// "Remove <face>" in a handle's menu (docs/OnViewValueEditing.md 3.4):
+    /// the panel's removal of the first face's row
+    void addRemoveFirstFaceAction(QMenu &menu);
 
 protected:
     enum selectionModes { none, refToggle, plane, line };

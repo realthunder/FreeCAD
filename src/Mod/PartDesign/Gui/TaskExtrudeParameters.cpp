@@ -22,7 +22,9 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <QMenu>
 # include <QSignalBlocker>
+# include <QTimer>
 #endif
 
 #include <App/Document.h>
@@ -32,6 +34,7 @@
 #include <Gui/Command.h>
 #include <Gui/Fw/FwQtView.h>
 #include <Gui/Fw/FwWidgets.h>
+#include <Gui/OnViewValue.h>
 #include <Gui/QuantitySpinBox.h>
 #include <Gui/Widgets.h>
 #include <Mod/Part/App/GizmoHelper.h>
@@ -212,14 +215,11 @@ void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)
 
 void TaskExtrudeParameters::setupGizmos()
 {
-    if (GizmoContainer::isEnabled() == false) {
-        return;
-    }
-
     // A gizmo drives a Qt spin box, and this form's fields are Fw models: hand
     // it the widget the model is realized as, the route the panel already
     // takes for its other Qt-only calls. The widget's own sync carries a drag
-    // to the model and the property. No widget, no gizmos.
+    // to the model and the property. No widget, no gizmos, and no values in
+    // the view, which are held by the same boxes.
     auto spinBoxOf = [](Gui::Fw::QuantitySpinBox* model) {
         return qobject_cast<Gui::QuantitySpinBox*>(Gui::FwQt::widgetOf(model));
     };
@@ -232,32 +232,109 @@ void TaskExtrudeParameters::setupGizmos()
         return;
     }
 
-    const auto toggleReversed = [this] {
-        if (ui->checkBoxReversed->isEnabled()) {
-            ui->checkBoxReversed->setChecked(!ui->checkBoxReversed->isChecked());
-        }
-    };
+    // The values in the view (docs/OnViewValueEditing.md 3.3, entry 170): the
+    // length's label always at the top middle, the others' beside their
+    // handle while it is active -- at the top middle too without handles.
+    // A click on a length's arrow no longer reverses it: the handles' menu
+    // does (3.3, "a click on the arrow itself no longer flips anything by
+    // surprise").
+    const bool handles = GizmoContainer::isEnabled();
+    const auto beside = handles ? Gui::OnViewValueSet::Place::AtHandle
+                                : Gui::OnViewValueSet::Place::TopMiddle;
+    onViewValues = std::make_unique<Gui::OnViewValueSet>();
+    onViewValues->addValue(length1, tr("Length"), Gui::OnViewValueSet::Place::TopMiddle);
+    onViewValues->addValue(length2, tr("Length 2"), beside);
+    onViewValues->addValue(taper1, tr("Taper angle"), beside);
+    onViewValues->addValue(taper2, tr("Taper angle 2"), beside);
+    onViewValues->addValue(startOffset, tr("Start offset"), beside);
+    for (int i = LengthValue; i <= StartOffsetValue; ++i) {
+        const int side = i == Length2Value || i == Taper2Value ? 2 : 1;
+        onViewValues->setMenu(i, [this, side](QMenu& menu, Gui::Gizmo*) {
+            fillValueMenu(menu, side);
+        });
+    }
 
-    lengthGizmo1 = new Gui::LinearGizmo(length1);
-    lengthGizmo1->setClickCallback(toggleReversed);
-    lengthGizmo2 = new Gui::LinearGizmo(length2);
-    lengthGizmo2->setClickCallback(toggleReversed);
-    startOffsetGizmo = new Gui::LinearGizmo(startOffset);
-    startOffsetGizmo->setDraggerStyle(Gui::LinearDraggerStyle::Sphere);
-    taperAngleGizmo1 = new Gui::RotationGizmo(taper1);
-    taperAngleGizmo2 = new Gui::RotationGizmo(taper2);
+    if (handles) {
+        lengthGizmo1 = new Gui::LinearGizmo(length1);
+        lengthGizmo2 = new Gui::LinearGizmo(length2);
+        startOffsetGizmo = new Gui::LinearGizmo(startOffset);
+        startOffsetGizmo->setDraggerStyle(Gui::LinearDraggerStyle::Sphere);
+        taperAngleGizmo1 = new Gui::RotationGizmo(taper1);
+        taperAngleGizmo2 = new Gui::RotationGizmo(taper2);
+        // before the container makes them: their menus and tool tips
+        onViewValues->addHandle(LengthValue, lengthGizmo1);
+        onViewValues->addHandle(Length2Value, lengthGizmo2);
+        onViewValues->addHandle(TaperValue, taperAngleGizmo1);
+        onViewValues->addHandle(Taper2Value, taperAngleGizmo2);
+        onViewValues->addHandle(StartOffsetValue, startOffsetGizmo);
 
-    gizmoContainer = GizmoContainer::create(
-        {lengthGizmo1, lengthGizmo2, startOffsetGizmo, taperAngleGizmo1, taperAngleGizmo2},
-        vp
-    );
+        gizmoContainer = GizmoContainer::create(
+            {lengthGizmo1, lengthGizmo2, startOffsetGizmo, taperAngleGizmo1, taperAngleGizmo2},
+            vp
+        );
+    }
 
     setGizmoPositions();
-    showDraggerHints();
+    if (gizmoContainer) {
+        showDraggerHints();
+    }
+    attachOnViewValues();
+    // The view is told of the edit after the panel is made
+    QTimer::singleShot(0, this, [this]() {
+        attachOnViewValues();
+    });
+}
+
+void TaskExtrudeParameters::attachOnViewValues()
+{
+    if (onViewValues) {
+        onViewValues->attachToEdit(vp, gizmoContainer.get());
+    }
+}
+
+void TaskExtrudeParameters::updateOnViewValues()
+{
+    auto extrude = vp ? dynamic_cast<PartDesign::FeatureExtrude*>(vp->getObject()) : nullptr;
+    if (!onViewValues || !extrude) {
+        return;
+    }
+    // What the panel shows: a length for a side of the type Length, its
+    // taper with it, and the start offset for a start that is not the
+    // profile's plane
+    const bool twoSides = strcmp(extrude->SideType.getValueAsString(), "Two sides") == 0;
+    const bool length1 = strcmp(extrude->Type.getValueAsString(), "Length") == 0;
+    const bool length2 = twoSides && strcmp(extrude->Type2.getValueAsString(), "Length") == 0;
+    const bool hasStart = strcmp(extrude->StartType.getValueAsString(), "Profile plane") != 0;
+    onViewValues->setHidden(LengthValue, !length1);
+    onViewValues->setHidden(TaperValue, !length1);
+    onViewValues->setHidden(Length2Value, !length2);
+    onViewValues->setHidden(Taper2Value, !length2);
+    onViewValues->setHidden(StartOffsetValue, !hasStart);
+}
+
+void TaskExtrudeParameters::fillValueMenu(QMenu& menu, int side)
+{
+    // The feature's own operations (docs/OnViewValueEditing.md 3.3): the
+    // panel's own fields, set after the menu, as the recompute moves the
+    // handles
+    addToggleAction(menu, tr("Reversed"), ui->checkBoxReversed->isChecked(),
+                    ui->checkBoxReversed->isEnabled(), this, [this](bool checked) {
+                        ui->checkBoxReversed->setChecked(checked);
+                    });
+    auto addChoices = [this, &menu](const QString& title, Gui::Fw::QComboBox* combo) {
+        addChoicesMenu(menu, title, combo->items(), combo->currentIndex(), this,
+                       [combo](int i) {
+                           combo->setCurrentIndex(i);
+                       });
+    };
+    addChoices(tr("Sides"), ui->sideTypeCB);
+    addChoices(side == 2 ? tr("Type of side 2") : tr("Type"),
+               side == 2 ? ui->changeMode2 : ui->changeMode);
 }
 
 void TaskExtrudeParameters::setGizmoPositions()
 {
+    updateOnViewValues();
     if (!gizmoContainer) {
         return;
     }
@@ -323,12 +400,18 @@ void TaskExtrudeParameters::setGizmoPositions()
     }
 
     gizmoContainer->calculateScaleAndOrientation();
+    if (onViewValues) {
+        onViewValues->placeAnchors(gizmoContainer->getWorldMatrix());
+    }
 }
 
 void TaskExtrudeParameters::finishedRecomputeFeature()
 {
     TaskSketchBasedParameters::finishedRecomputeFeature();
     setGizmoPositions();
+    if (onViewValues) {
+        onViewValues->refresh();
+    }
 }
 
 void TaskExtrudeParameters::refresh()

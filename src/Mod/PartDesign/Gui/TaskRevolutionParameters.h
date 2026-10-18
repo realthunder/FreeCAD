@@ -32,12 +32,14 @@
 
 class Ui_TaskRevolutionParameters;
 class QComboBox;
+class QMenu;
 
 namespace App {
 class Property;
 }
 
 namespace Gui {
+class OnViewValueSet;
 class ViewProvider;
 }
 
@@ -114,6 +116,21 @@ private:
 
     double defaultGizmoMultFactor = 1.0;
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    /// The values in the view (docs/OnViewValueEditing.md 3.3, entry 170),
+    /// in the order of the enum below. After gizmoContainer, so that it goes
+    /// before the handles it holds.
+    std::unique_ptr<Gui::OnViewValueSet> onViewValues;
+    enum OnViewValue {
+        AngleValue,
+        Angle2Value,
+        StartOffsetValue,
+    };
+    /// Show the values in the view the edit runs in, and restate them
+    void attachOnViewValues();
+    /// The values the feature does not use now hidden
+    void updateOnViewValues();
+    /// A handle's menu: the reversal, the sides and \a side's type
+    void fillValueMenu(QMenu& menu, int side);
     Gui::RadialGizmo* rotationGizmo = nullptr;
     Gui::RadialGizmo* rotationGizmo2 = nullptr;
     Gui::RotationGizmo* startOffsetGizmo = nullptr;

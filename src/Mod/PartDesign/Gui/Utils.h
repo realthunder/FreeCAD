@@ -23,6 +23,9 @@
 #ifndef UTILS_H_CS5LK2ZQ
 #define UTILS_H_CS5LK2ZQ
 
+#include <functional>
+#include <QStringList>
+
 #include "Workbench.h"
 #include <Gui/ActiveObjectList.h>
 
@@ -31,6 +34,9 @@ class QTreeWidgetItem;
 class QByteArray;
 class QGridLayout;
 class QCheckBox;
+class QComboBox;
+class QMenu;
+class QObject;
 
 /** \file PartDesign/Gui/Utils.h
  *  This file contains some utility function used over PartDesignGui module
@@ -81,6 +87,22 @@ QByteArray getGeometryItemText(QTreeWidgetItem *item);
 QByteArray getGeometryItemReference(QTreeWidgetItem *item);
 void setGeometryItemText(QTreeWidgetItem *item, const std::string &);
 void setGeometryItemReference(QTreeWidgetItem *item, const std::string &);
+
+/** @name A feature's operations in a handle's menu
+ * (docs/OnViewValueEditing.md 3.3, entry 170): each sets the panel's own
+ * field after the menu has closed, as the recompute it starts moves the
+ * handles, and only while \a context lives
+ */
+//@{
+/// A check box of the panel as a checkable entry
+void addToggleAction(QMenu &menu, const QString &title, bool checked, bool enabled,
+                     QObject *context, std::function<void(bool)> set);
+/// A combo box's choices as a sub-menu, the current one checked
+void addChoicesMenu(QMenu &menu, const QString &title, const QStringList &items, int current,
+                    QObject *context, std::function<void(int)> choose);
+/// The texts of a combo box's choices
+QStringList comboItems(const QComboBox *combo);
+//@}
 
 /// Import an external feature into the body of the host feature using SubShapeBinder
 App::SubObjectT importExternalObject(const App::SubObjectT &feature,

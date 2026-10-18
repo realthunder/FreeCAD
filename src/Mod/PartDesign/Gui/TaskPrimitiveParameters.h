@@ -41,6 +41,7 @@ class Property;
 }
 
 namespace Gui {
+class OnViewValueSet;
 class ViewProvider;
 }
 
@@ -112,6 +113,12 @@ private:
     std::unique_ptr<Ui_DlgPrimitives> ui;
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    /// The values with handles in the view (docs/OnViewValueEditing.md 3.3,
+    /// entry 170). After gizmoContainer, so that it goes before the handles
+    /// it holds.
+    std::unique_ptr<Gui::OnViewValueSet> onViewValues;
+    /// Show the values in the view the edit runs in, and restate them
+    void attachOnViewValues();
     Gui::LinearGizmo* lengthGizmo = nullptr;
     Gui::LinearGizmo* heightGizmo = nullptr;
     Gui::LinearGizmo* widthGizmo = nullptr;

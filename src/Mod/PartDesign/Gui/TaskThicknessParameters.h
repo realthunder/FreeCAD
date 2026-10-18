@@ -30,6 +30,11 @@
 #include "ViewProviderThickness.h"
 
 class Ui_TaskThicknessParameters;
+class QMenu;
+
+namespace Gui {
+class OnViewValueSet;
+}
 
 namespace PartDesignGui {
 
@@ -65,9 +70,16 @@ private:
     std::unique_ptr<Ui_TaskThicknessParameters> ui;
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    /// The thickness in the view (docs/OnViewValueEditing.md 3.4, entry
+    /// 170). After gizmoContainer, so that it goes before the handles it
+    /// holds.
+    std::unique_ptr<Gui::OnViewValueSet> onViewValues;
     Gui::LinearGizmo* linearGizmo = nullptr;
     void setupGizmos(ViewProviderDressUp* vp);
     void setGizmoPositions();
+    /// Show the values in the view the edit runs in, and restate them
+    void attachOnViewValues();
+    void fillValueMenu(QMenu& menu);
     void updateModeControls(int mode);
 };
 

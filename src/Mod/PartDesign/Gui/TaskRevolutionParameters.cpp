@@ -24,6 +24,8 @@
 #include "PreCompiled.h"
 
 #include <QHBoxLayout>
+#include <QMenu>
+#include <QTimer>
 #include <gp_Pln.hxx>
 
 #include <App/Document.h>
@@ -36,6 +38,7 @@
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
+#include <Gui/OnViewValue.h>
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
@@ -169,34 +172,98 @@ LinkSubWidget *TaskRevolutionParameters::makeUpToWidget(QWidget *holder,
 
 void TaskRevolutionParameters::setupGizmos(ViewProvider* vp)
 {
-    if (!GizmoContainer::isEnabled()) {
-        return;
+    // The values in the view (docs/OnViewValueEditing.md 3.3, entry 170): the
+    // angle's label always at the top middle, the others' beside their
+    // handle while it is active -- at the top middle too without handles.
+    // A click on an angle's handle no longer turns the revolution: the
+    // handles' menu does (3.3).
+    const bool handles = GizmoContainer::isEnabled();
+    const auto beside = handles ? Gui::OnViewValueSet::Place::AtHandle
+                                : Gui::OnViewValueSet::Place::TopMiddle;
+    onViewValues = std::make_unique<Gui::OnViewValueSet>();
+    onViewValues->addValue(ui->revolveAngle, tr("Angle"), Gui::OnViewValueSet::Place::TopMiddle);
+    onViewValues->addValue(ui->revolveAngle2, tr("Angle 2"), beside);
+    onViewValues->addValue(ui->startOffsetEdit, tr("Start offset"), beside);
+    for (int i = AngleValue; i <= StartOffsetValue; ++i) {
+        const int side = i == Angle2Value ? 2 : 1;
+        onViewValues->setMenu(i, [this, side](QMenu& menu, Gui::Gizmo*) {
+            fillValueMenu(menu, side);
+        });
     }
 
-    // A click on an angle gizmo that does not drag it turns the revolution
-    const auto toggleReversed = [this] {
-        if (ui->checkBoxReversed->isEnabled())
-            ui->checkBoxReversed->setChecked(!ui->checkBoxReversed->isChecked());
-    };
+    if (handles) {
+        rotationGizmo = new Gui::RadialGizmo(ui->revolveAngle);
+        rotationGizmo2 = new Gui::RadialGizmo(ui->revolveAngle2);
+        startOffsetGizmo = new Gui::RotationGizmo(ui->startOffsetEdit);
+        // before the container makes them: their menus and tool tips
+        onViewValues->addHandle(AngleValue, rotationGizmo);
+        onViewValues->addHandle(Angle2Value, rotationGizmo2);
+        onViewValues->addHandle(StartOffsetValue, startOffsetGizmo);
 
-    rotationGizmo = new Gui::RadialGizmo(ui->revolveAngle);
-    rotationGizmo->setClickCallback(toggleReversed);
-    rotationGizmo2 = new Gui::RadialGizmo(ui->revolveAngle2);
-    rotationGizmo2->setClickCallback(toggleReversed);
-    startOffsetGizmo = new Gui::RotationGizmo(ui->startOffsetEdit);
+        gizmoContainer = GizmoContainer::create({rotationGizmo, rotationGizmo2, startOffsetGizmo}, vp);
+        rotationGizmo->flipArrow();
+        rotationGizmo2->flipArrow();
 
-    gizmoContainer = GizmoContainer::create({rotationGizmo, rotationGizmo2, startOffsetGizmo}, vp);
-    rotationGizmo->flipArrow();
-    rotationGizmo2->flipArrow();
-
-    defaultGizmoMultFactor = rotationGizmo->getMultFactor();
+        defaultGizmoMultFactor = rotationGizmo->getMultFactor();
+    }
 
     setGizmoPositions();
-    showDraggerHints();
+    if (gizmoContainer) {
+        showDraggerHints();
+    }
+    attachOnViewValues();
+    // The view is told of the edit after the panel is made
+    QTimer::singleShot(0, this, [this]() {
+        attachOnViewValues();
+    });
+}
+
+void TaskRevolutionParameters::attachOnViewValues()
+{
+    if (onViewValues) {
+        onViewValues->attachToEdit(vp, gizmoContainer.get());
+    }
+}
+
+void TaskRevolutionParameters::updateOnViewValues()
+{
+    auto feature = vp ? Base::freecad_dynamic_cast<PartDesign::Revolved>(vp->getObject()) : nullptr;
+    if (!onViewValues || !feature) {
+        return;
+    }
+    // What the panel shows: an angle for a side of the type Angle, and the
+    // start offset for a start that is not the profile's plane
+    const bool twoSides = strcmp(feature->SideType.getValueAsString(), "Two sides") == 0;
+    const auto method = PartDesign::Revolved::methodOf(feature->Type);
+    const auto method2 = PartDesign::Revolved::methodOf(feature->Type2);
+    onViewValues->setHidden(AngleValue, method != RevolMethod::Angle);
+    onViewValues->setHidden(Angle2Value, !twoSides || method2 != RevolMethod::Angle);
+    onViewValues->setHidden(StartOffsetValue,
+                            strcmp(feature->StartType.getValueAsString(), "Profile plane") == 0);
+}
+
+void TaskRevolutionParameters::fillValueMenu(QMenu& menu, int side)
+{
+    // The feature's own operations (docs/OnViewValueEditing.md 3.3): the
+    // panel's own fields
+    addToggleAction(menu, tr("Reversed"), ui->checkBoxReversed->isChecked(),
+                    ui->checkBoxReversed->isEnabled(), this, [this](bool checked) {
+                        ui->checkBoxReversed->setChecked(checked);
+                    });
+    auto addChoices = [this, &menu](const QString& title, QComboBox* combo) {
+        addChoicesMenu(menu, title, comboItems(combo), combo->currentIndex(), this,
+                       [combo](int i) {
+                           combo->setCurrentIndex(i);
+                       });
+    };
+    addChoices(tr("Sides"), ui->sideTypeCB);
+    addChoices(side == 2 ? tr("Type of side 2") : tr("Type"),
+               side == 2 ? ui->changeMode2 : ui->changeMode);
 }
 
 void TaskRevolutionParameters::setGizmoPositions()
 {
+    updateOnViewValues();
     if (!gizmoContainer) {
         return;
     }
@@ -262,12 +329,18 @@ void TaskRevolutionParameters::setGizmoPositions()
     else {
         rotationGizmo->setMultFactor(defaultGizmoMultFactor / 2.0);
     }
+    if (onViewValues) {
+        onViewValues->placeAnchors(gizmoContainer->getWorldMatrix());
+    }
 }
 
 void TaskRevolutionParameters::finishedRecomputeFeature()
 {
     TaskSketchBasedParameters::finishedRecomputeFeature();
     setGizmoPositions();
+    if (onViewValues) {
+        onViewValues->refresh();
+    }
 }
 
 void TaskRevolutionParameters::onAxisButton(bool checked)

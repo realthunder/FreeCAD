@@ -25,14 +25,18 @@
 
 #ifndef _PreComp_
 # include <QAction>
+# include <QActionGroup>
 # include <QListView>
+# include <QMenu>
 # include <QStandardItemModel>
+# include <QTimer>
 #endif
 
 #include <Base/Interpreter.h>
 #include <App/Document.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
+#include <Gui/OnViewValue.h>
 #include <Gui/Selection.h>
 #include <Gui/Command.h>
 #include <BRepOffset_Mode.hxx>
@@ -105,7 +109,58 @@ TaskThicknessParameters::TaskThicknessParameters(ViewProviderDressUp *DressUpVie
     connect(ui->checkIntersection, &QCheckBox::toggled,
         this, &TaskThicknessParameters::onIntersectionChanged);
 
+    // The thickness in the view (docs/OnViewValueEditing.md 3.4, entry 170):
+    // its label always at the top middle, typed once its handle is made
+    // active by a click or Tab
+    onViewValues = std::make_unique<Gui::OnViewValueSet>();
+    onViewValues->addValue(ui->Value, tr("Thickness"), Gui::OnViewValueSet::Place::TopMiddle);
+    onViewValues->setMenu(0, [this](QMenu& menu, Gui::Gizmo*) {
+        fillValueMenu(menu);
+    });
     setupGizmos(DressUpView);
+    attachOnViewValues();
+    // The view is told of the edit after the panel is made
+    QTimer::singleShot(0, this, [this]() {
+        attachOnViewValues();
+    });
+}
+
+void TaskThicknessParameters::attachOnViewValues()
+{
+    if (onViewValues) {
+        onViewValues->attachToEdit(getDressUpView(), gizmoContainer.get());
+    }
+}
+
+void TaskThicknessParameters::fillValueMenu(QMenu& menu)
+{
+    // The feature's own operations (docs/OnViewValueEditing.md 3.4): the
+    // panel's check box and join type, set after the menu, as the recompute
+    // moves the handle
+    QAction* reversed = menu.addAction(ui->checkReverse->text());
+    reversed->setCheckable(true);
+    reversed->setChecked(ui->checkReverse->isChecked());
+    connect(reversed, &QAction::triggered, this, [this](bool checked) {
+        QTimer::singleShot(0, this, [this, checked]() {
+            ui->checkReverse->setChecked(checked);
+        });
+    });
+    QMenu* joins = menu.addMenu(tr("Join type"));
+    auto joinActions = new QActionGroup(joins);
+    joinActions->setExclusive(true);
+    for (int i = 0; i < ui->joinComboBox->count(); ++i) {
+        QAction* action = joins->addAction(ui->joinComboBox->itemText(i));
+        action->setCheckable(true);
+        action->setChecked(i == ui->joinComboBox->currentIndex());
+        joinActions->addAction(action);
+        connect(action, &QAction::triggered, this, [this, i]() {
+            QTimer::singleShot(0, this, [this, i]() {
+                ui->joinComboBox->setCurrentIndex(i);
+            });
+        });
+    }
+    // the face the handle stands on
+    addRemoveFirstFaceAction(menu);
 }
 
 void TaskThicknessParameters::setupGizmos(ViewProviderDressUp* vp)
@@ -115,6 +170,8 @@ void TaskThicknessParameters::setupGizmos(ViewProviderDressUp* vp)
     }
 
     linearGizmo = new Gui::LinearGizmo(ui->Value);
+    // before the container makes it: its menu and its tool tip
+    onViewValues->addHandle(0, linearGizmo);
 
     gizmoContainer = GizmoContainer::create({linearGizmo}, vp);
 
@@ -156,12 +213,18 @@ void TaskThicknessParameters::setGizmoPositions()
     props.dir *= thickness->Reversed.getValue() ? 1 : -1;
 
     linearGizmo->Gizmo::setDraggerPlacement(props.position, props.dir);
+    if (onViewValues) {
+        onViewValues->placeAnchors(gizmoContainer->getWorldMatrix());
+    }
 }
 
 void TaskThicknessParameters::finishedRecomputeFeature()
 {
     TaskDressUpParameters::finishedRecomputeFeature();
     setGizmoPositions();
+    if (onViewValues) {
+        onViewValues->refresh();
+    }
 }
 
 void TaskThicknessParameters::refresh()

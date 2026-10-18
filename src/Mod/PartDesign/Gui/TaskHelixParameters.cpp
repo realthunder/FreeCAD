@@ -23,6 +23,9 @@
 
 #include "PreCompiled.h"
 
+#include <QMenu>
+#include <QTimer>
+
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Origin.h>
@@ -30,6 +33,7 @@
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
 #include <Gui/Document.h>
+#include <Gui/OnViewValue.h>
 #include <Gui/Selection.h>
 #include <Gui/WaitCursor.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
@@ -40,6 +44,7 @@
 #include "ReferenceSelection.h"
 #include "ui_TaskHelixParameters.h"
 #include "TaskHelixParameters.h"
+#include "Utils.h"
 
 using namespace PartDesignGui;
 using PartDesign::HelixMode;
@@ -79,23 +84,92 @@ TaskHelixParameters::TaskHelixParameters(PartDesignGui::ViewProviderHelix* Helix
 
 void TaskHelixParameters::setupGizmos(ViewProviderHelix* vp)
 {
-    if (!GizmoContainer::isEnabled()) {
-        return;
+    // The values in the view (docs/OnViewValueEditing.md 3.3, entry 170):
+    // each value the mode shows has its label at the top middle; the height
+    // has its handle too
+    onViewValues = std::make_unique<Gui::OnViewValueSet>();
+    const auto top = Gui::OnViewValueSet::Place::TopMiddle;
+    onViewValues->addValue(ui->pitch, tr("Pitch"), top);
+    onViewValues->addValue(ui->height, tr("Height"), top);
+    onViewValues->addValue(ui->turns, tr("Turns"), top);
+    onViewValues->addValue(ui->coneAngle, tr("Cone angle"), top);
+    onViewValues->addValue(ui->growth, tr("Radial growth"), top);
+    for (int i = PitchValue; i <= GrowthValue; ++i) {
+        onViewValues->setMenu(i, [this](QMenu& menu, Gui::Gizmo*) {
+            fillValueMenu(menu);
+        });
     }
-
-    heightGizmo = new Gui::LinearGizmo(ui->height);
-
-    connect(ui->inputMode, qOverload<int>(&QComboBox::currentIndexChanged), [this](int index) {
-        bool isPitchTurnsAngle = index == static_cast<int>(HelixMode::pitch_turns_angle);
-        heightGizmo->setVisibility(!isPitchTurnsAngle);
+    // after the panel's own handler, which shows the mode's boxes
+    connect(ui->inputMode, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]() {
+        updateOnViewValues();
     });
 
-    gizmoContainer = GizmoContainer::create({heightGizmo}, vp);
+    if (GizmoContainer::isEnabled()) {
+        heightGizmo = new Gui::LinearGizmo(ui->height);
+        // before the container makes it: its menu and its tool tip
+        onViewValues->addHandle(HeightValue, heightGizmo);
 
-    setGizmoPositions();
+        connect(ui->inputMode, qOverload<int>(&QComboBox::currentIndexChanged), [this](int index) {
+            bool isPitchTurnsAngle = index == static_cast<int>(HelixMode::pitch_turns_angle);
+            heightGizmo->setVisibility(!isPitchTurnsAngle);
+        });
 
-    ui->inputMode->currentIndexChanged(ui->inputMode->currentIndex());
-    showDraggerHints();
+        gizmoContainer = GizmoContainer::create({heightGizmo}, vp);
+
+        setGizmoPositions();
+
+        ui->inputMode->currentIndexChanged(ui->inputMode->currentIndex());
+        showDraggerHints();
+    }
+    updateOnViewValues();
+    attachOnViewValues();
+    // The view is told of the edit after the panel is made
+    QTimer::singleShot(0, this, [this]() {
+        attachOnViewValues();
+    });
+}
+
+void TaskHelixParameters::attachOnViewValues()
+{
+    if (onViewValues) {
+        onViewValues->attachToEdit(vp, gizmoContainer.get());
+    }
+}
+
+void TaskHelixParameters::updateOnViewValues()
+{
+    if (!onViewValues) {
+        return;
+    }
+    // As adaptVisibilityToMode() shows the boxes
+    onViewValues->setHidden(PitchValue, ui->pitch->isHidden());
+    onViewValues->setHidden(HeightValue, ui->height->isHidden());
+    onViewValues->setHidden(TurnsValue, ui->turns->isHidden());
+    onViewValues->setHidden(AngleValue, ui->coneAngle->isHidden());
+    onViewValues->setHidden(GrowthValue, ui->growth->isHidden());
+}
+
+void TaskHelixParameters::fillValueMenu(QMenu& menu)
+{
+    // The feature's own operations (docs/OnViewValueEditing.md 3.3): the
+    // panel's own fields
+    addToggleAction(menu, ui->checkBoxLeftHanded->text(), ui->checkBoxLeftHanded->isChecked(),
+                    ui->checkBoxLeftHanded->isEnabled(), this, [this](bool checked) {
+                        ui->checkBoxLeftHanded->setChecked(checked);
+                    });
+    addToggleAction(menu, ui->checkBoxReversed->text(), ui->checkBoxReversed->isChecked(),
+                    ui->checkBoxReversed->isEnabled(), this, [this](bool checked) {
+                        ui->checkBoxReversed->setChecked(checked);
+                    });
+    addChoicesMenu(menu, tr("Mode"), comboItems(ui->inputMode), ui->inputMode->currentIndex(),
+                   this, [this](int i) {
+                       // the panel acts on the user's choice, not on any
+                       // change of the index
+                       if (ui->inputMode->currentIndex() != i) {
+                           ui->inputMode->setCurrentIndex(i);
+                           Q_EMIT ui->inputMode->activated(i);
+                       }
+                   });
 }
 
 void TaskHelixParameters::setGizmoPositions()
@@ -121,12 +195,19 @@ void TaskHelixParameters::setGizmoPositions()
     Base::Vector3d pos = basePos + axisDir.Dot(profileCentre - basePos) * axisDir;
 
     heightGizmo->Gizmo::setDraggerPlacement(pos, axisDir);
+    if (onViewValues) {
+        onViewValues->placeAnchors(gizmoContainer->getWorldMatrix());
+    }
 }
 
 void TaskHelixParameters::finishedRecomputeFeature()
 {
     TaskSketchBasedParameters::finishedRecomputeFeature();
     setGizmoPositions();
+    if (onViewValues) {
+        updateOnViewValues();
+        onViewValues->refresh();
+    }
 }
 
 void TaskHelixParameters::initializeHelix()
